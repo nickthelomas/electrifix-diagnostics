@@ -181,10 +181,25 @@ class ScooterSimulator:
             return b'\xff' * 15 if self.config.protocol == "jp_qs_s4" else b'\xff' * 10
 
         elif self.config.fault == SimulationFault.INTERMITTENT:
-            # Sometimes no data
-            if random.random() < 0.3:
+            # Simulate intermittent connection issues
+            roll = random.random()
+            if roll < 0.2:
+                # 20% - No data (connection drop)
                 return b''
-            return self._generate_jp_normal_packet() if self.config.protocol == "jp_qs_s4" else self._generate_ninebot_normal_packet()
+            elif roll < 0.4:
+                # 20% - Corrupted checksum (noise on line)
+                packet = self._generate_jp_normal_packet() if self.config.protocol == "jp_qs_s4" else self._generate_ninebot_normal_packet()
+                packet = bytearray(packet)
+                packet[-1] ^= random.randint(1, 255)
+                return bytes(packet)
+            elif roll < 0.5:
+                # 10% - Partial packet (truncated)
+                packet = self._generate_jp_normal_packet() if self.config.protocol == "jp_qs_s4" else self._generate_ninebot_normal_packet()
+                truncate_len = random.randint(3, len(packet) - 2)
+                return packet[:truncate_len]
+            else:
+                # 50% - Normal packet
+                return self._generate_jp_normal_packet() if self.config.protocol == "jp_qs_s4" else self._generate_ninebot_normal_packet()
 
         elif self.config.fault == SimulationFault.OVERVOLTAGE:
             # Voltage reading too high
