@@ -564,10 +564,21 @@
             try {
                 const res = await fetch(API + '/api/serial/start?port=' + encodeURIComponent(port) + '&baud_rate=' + baud, {method: 'POST'});
                 const data = await res.json();
+
+                if (!res.ok) {
+                    showToast(data.detail || 'Failed to start capture', true);
+                    return;
+                }
+
                 if (data.status === 'capturing') {
                     startCaptureUI();
+                } else {
+                    showToast('Unexpected response from server', true);
                 }
-            } catch(e) { showToast('Failed to start', true); }
+            } catch(e) {
+                console.error('Capture start error:', e);
+                showToast('Failed to start: ' + (e.message || 'Network error'), true);
+            }
         }
 
         async function startSimulationCapture() {
@@ -577,11 +588,22 @@
             try {
                 const res = await fetch(API + '/api/simulation/start?protocol=' + protocol + '&fault=' + fault, {method: 'POST'});
                 const data = await res.json();
+
+                if (!res.ok) {
+                    showToast(data.detail || 'Failed to start simulation', true);
+                    return;
+                }
+
                 if (data.status === 'capturing') {
                     startCaptureUI();
                     showToast('Simulation started (' + protocol + ')');
+                } else {
+                    showToast('Unexpected response from server', true);
                 }
-            } catch(e) { showToast('Failed to start simulation', true); }
+            } catch(e) {
+                console.error('Simulation start error:', e);
+                showToast('Failed to start simulation: ' + (e.message || 'Network error'), true);
+            }
         }
 
         function startCaptureUI() {
@@ -607,13 +629,28 @@
                 }
                 document.getElementById('btn-start').classList.remove('hidden');
                 document.getElementById('btn-stop').classList.add('hidden');
+
+                if (!res.ok) {
+                    showToast(data.detail || 'Error stopping capture', true);
+                    return;
+                }
+
                 if (data.total_bytes > 0) {
                     captureBytes = data.total_bytes;
                     document.getElementById('bytes-count').textContent = captureBytes;
                     document.getElementById('btn-analyze').classList.remove('hidden');
                     showToast('Captured ' + captureBytes + ' bytes');
+                } else {
+                    showToast('No data captured - ensure scooter is powered on', true);
                 }
-            } catch(e) { showToast('Failed to stop', true); }
+            } catch(e) {
+                console.error('Stop capture error:', e);
+                showToast('Failed to stop: ' + (e.message || 'Network error'), true);
+                // Still reset UI state
+                isCapturing = false;
+                document.getElementById('btn-start').classList.remove('hidden');
+                document.getElementById('btn-stop').classList.add('hidden');
+            }
         }
 
         async function pollCapture() {
@@ -679,15 +716,24 @@
             try {
                 const res = await fetch(API + '/api/diagnose/analyze?model_id=' + modelId + '&customer_symptoms=' + encodeURIComponent(symptoms), {method: 'POST'});
                 const data = await res.json();
+
+                if (!res.ok) {
+                    showToast(data.detail || 'Analysis failed', true);
+                    return;
+                }
+
                 if (data.diagnosis_id) {
                     currentDiagnosisId = data.diagnosis_id;
                     showToast('Analysis complete!');
                     loadHistory();
                     displayResults(data);
                 } else {
-                    showToast(data.detail || 'Analysis failed', true);
+                    showToast('No diagnosis ID returned', true);
                 }
-            } catch(e) { showToast('Analysis failed', true); }
+            } catch(e) {
+                console.error('Analysis error:', e);
+                showToast('Analysis failed: ' + (e.message || 'Network error'), true);
+            }
         }
 
         function displayResults(data) {
