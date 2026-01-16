@@ -56,10 +56,8 @@ Built a web-based e-scooter UART diagnostic tool for Nick's ElectriFix Perth wor
 ## Configuration
 
 ### OpenRouter API Key
-Already configured in `.env`:
-```
-OPENROUTER_API_KEY=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
-```
+Configured in `.env` file (not committed to git for security).
+**Note:** Never commit API keys to GitHub - they are automatically ignored via `.gitignore`
 
 ### AI Model
 Using **Claude 3.5 Haiku** via OpenRouter - cost-effective (~/data/data/com.termux/files/usr/bin/bash.25/M input tokens) and capable.
