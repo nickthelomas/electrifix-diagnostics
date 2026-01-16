@@ -607,9 +607,33 @@ async def start_simulation_capture(
 
 @app.get("/api/models")
 async def list_models():
-    """List all scooter models."""
+    """List all scooter models with baseline status."""
     models = get_all_models()
+
+    # Add component baseline status to each model
+    for model in models:
+        baseline = get_component_baseline(model['id'])
+        model['has_component_baseline'] = baseline is not None
+        if baseline:
+            model['baseline_captured_at'] = baseline.get('updated_at') or baseline.get('created_at')
+
     return {"models": models}
+
+
+@app.get("/api/models/with-baselines")
+async def list_models_with_baselines():
+    """List only models that have component baselines."""
+    all_models = get_all_models()
+    models_with_baselines = []
+
+    for model in all_models:
+        baseline = get_component_baseline(model['id'])
+        if baseline:
+            model['has_component_baseline'] = True
+            model['baseline_captured_at'] = baseline.get('updated_at') or baseline.get('created_at')
+            models_with_baselines.append(model)
+
+    return {"models": models_with_baselines}
 
 
 @app.get("/api/models/{model_id}")
