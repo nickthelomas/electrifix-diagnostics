@@ -37,23 +37,25 @@ class CaptureSession:
 
 class SerialCapture:
     """Serial port capture and auto-detection engine."""
-    
+
     # Common baud rates for e-scooters, ordered by likelihood
     BAUD_RATES = [1200, 9600, 115200, 19200, 2400, 4800, 57600]
-    
+
     # Known packet headers for protocol detection
     PROTOCOL_HEADERS = {
         "ninebot": [b'\x5a\xa5', b'\x55\xaa'],  # Ninebot/Xiaomi
         "jp_qs_s4": [b'\x01\x03'],  # JP/QS-S4/Chinese generic
     }
-    
+
     def __init__(self):
         self.serial_port: Optional[serial.Serial] = None
         self.is_capturing = False
         self.capture_queue = queue.Queue()
         self.current_session: Optional[CaptureSession] = None
+        self.last_session: Optional[CaptureSession] = None  # Preserve last completed session
         self._capture_thread: Optional[threading.Thread] = None
         self._callbacks: List[Callable] = []
+        self._lock = threading.Lock()  # Thread safety for session access
     
     @staticmethod
     def list_available_ports() -> List[Dict]:
@@ -224,34 +226,36 @@ class SerialCapture:
     def _capture_loop(self):
         """Background capture loop."""
         start_ms = int(time.time() * 1000)
-        
+
         while self.is_capturing and self.serial_port and self.serial_port.is_open:
             try:
                 if self.serial_port.in_waiting > 0:
                     data = self.serial_port.read(self.serial_port.in_waiting)
                     timestamp_ms = int(time.time() * 1000) - start_ms
-                    
+
                     packet = CapturePacket(
                         timestamp_ms=timestamp_ms,
                         raw_bytes=data,
                         hex_string=data.hex()
                     )
-                    
-                    self.current_session.packets.append(packet)
-                    self.current_session.total_bytes += len(data)
-                    
+
+                    with self._lock:
+                        if self.current_session:
+                            self.current_session.packets.append(packet)
+                            self.current_session.total_bytes += len(data)
+
                     # Notify callbacks
                     for callback in self._callbacks:
                         try:
                             callback(packet)
                         except Exception as e:
                             print(f"Callback error: {e}")
-                    
+
                     # Put in queue for async consumers
                     self.capture_queue.put(packet)
-                
+
                 time.sleep(0.001)  # 1ms polling
-                
+
             except serial.SerialException as e:
                 print(f"Serial error during capture: {e}")
                 break
@@ -259,21 +263,23 @@ class SerialCapture:
     def stop_capture(self) -> Optional[CaptureSession]:
         """Stop capturing and return session data."""
         self.is_capturing = False
-        
+
         if self._capture_thread:
             self._capture_thread.join(timeout=2.0)
             self._capture_thread = None
-        
+
         self.disconnect()
         self._callbacks.clear()
-        
-        if self.current_session:
-            self.current_session.end_time = datetime.now()
-            session = self.current_session
-            self.current_session = None
-            return session
-        
-        return None
+
+        with self._lock:
+            if self.current_session:
+                self.current_session.end_time = datetime.now()
+                session = self.current_session
+                self.last_session = session  # Preserve for later access
+                self.current_session = None
+                return session
+
+        return self.last_session  # Return last session if no current session
     
     def get_combined_data(self) -> bytes:
         """Get all captured data combined."""

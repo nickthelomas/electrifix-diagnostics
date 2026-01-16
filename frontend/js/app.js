@@ -304,7 +304,7 @@ function app() {
                 
                 const data = await res.json();
                 
-                if (data.message && !data.success === false) {
+                if (data.message && data.success !== false) {
                     this.aiConfigured = true;
                     this.apiKey = '';
                     this.showToast('API key saved successfully', 'success');

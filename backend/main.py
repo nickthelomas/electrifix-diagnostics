@@ -24,8 +24,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from database import (
     init_database, seed_default_models, get_all_models, get_model_by_id,
-    create_model, create_diagnosis, update_diagnosis_with_ai, complete_diagnosis,
-    get_diagnosis_history, get_similar_faults, get_diagnosis_stats
+    create_model, update_model, delete_model, create_diagnosis,
+    update_diagnosis_with_ai, complete_diagnosis, get_diagnosis_history,
+    get_similar_faults, get_diagnosis_stats, create_baseline, get_baseline_for_model
 )
 from serial_capture import SerialCapture, get_capture_instance
 from analysis import DiagnosticAnalyzer
@@ -129,7 +130,8 @@ class ConnectionManager:
         self.active_connections.append(websocket)
     
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
     
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
@@ -291,6 +293,93 @@ async def add_model(model: ScooterModelCreate):
     return {"id": model_id, "message": "Model created"}
 
 
+@app.put("/api/models/{model_id}")
+async def update_model_endpoint(model_id: int, model: ScooterModelCreate):
+    """Update an existing scooter model."""
+    model_data = model.dict()
+    success = update_model(model_id, model_data)
+    if not success:
+        raise HTTPException(404, "Model not found")
+    return {"message": "Model updated"}
+
+
+@app.delete("/api/models/{model_id}")
+async def delete_model_endpoint(model_id: int):
+    """Delete a scooter model."""
+    success = delete_model(model_id)
+    if not success:
+        raise HTTPException(404, "Model not found")
+    return {"message": "Model deleted"}
+
+
+# ----- Baseline Routes -----
+
+@app.post("/api/baselines/capture")
+async def capture_baseline(model_id: int, notes: Optional[str] = None):
+    """Capture and save a baseline for a scooter model."""
+    capture = get_capture_instance()
+
+    # Get captured data
+    if capture.is_capturing:
+        session = capture.stop_capture()
+    else:
+        session = capture.last_session
+
+    if not session or session.total_bytes == 0:
+        raise HTTPException(400, "No capture data available. Please capture data first.")
+
+    # Get model info
+    model = get_model_by_id(model_id)
+    if not model:
+        raise HTTPException(404, "Model not found")
+
+    # Combine raw data
+    raw_data = b''.join(p.raw_bytes for p in session.packets)
+
+    # Analyze to get stats
+    analyzer = DiagnosticAnalyzer()
+    result = analyzer.analyze_capture(raw_data, model.get("protocol", "auto"))
+
+    # Calculate duration
+    duration_ms = 0
+    if session.end_time and session.start_time:
+        duration_ms = int((session.end_time - session.start_time).total_seconds() * 1000)
+
+    # Save baseline
+    baseline_data = {
+        "model_id": model_id,
+        "capture_type": "working",
+        "raw_data": raw_data,
+        "parsed_data": result.packet_stats,
+        "packet_count": result.packet_stats.get("total_packets", 0),
+        "checksum_errors": result.packet_stats.get("invalid_checksums", 0),
+        "capture_duration_ms": duration_ms,
+        "notes": notes
+    }
+    baseline_id = create_baseline(baseline_data)
+
+    return {
+        "baseline_id": baseline_id,
+        "message": "Baseline captured successfully",
+        "stats": {
+            "total_bytes": session.total_bytes,
+            "packet_count": result.packet_stats.get("total_packets", 0),
+            "duration_ms": duration_ms
+        }
+    }
+
+
+@app.get("/api/baselines/{model_id}")
+async def get_baseline(model_id: int):
+    """Get the baseline for a model."""
+    baseline = get_baseline_for_model(model_id)
+    if not baseline:
+        raise HTTPException(404, "No baseline found for this model")
+    # Don't return raw binary data in JSON
+    baseline.pop("raw_data", None)
+    return baseline
+
+
 # ----- Diagnosis Routes -----
 
 @app.post("/api/diagnose/analyze")
@@ -300,16 +389,16 @@ async def analyze_capture(
 ):
     """Analyze captured data and generate diagnosis."""
     capture = get_capture_instance()
-    
+
     # Get captured data
     if capture.is_capturing:
         session = capture.stop_capture()
     else:
         # Check if we have data from a previous capture
-        session = capture.current_session
-    
+        session = capture.last_session
+
     if not session or session.total_bytes == 0:
-        raise HTTPException(400, "No capture data available")
+        raise HTTPException(400, "No capture data available. Please capture data first.")
     
     # Get model info
     model = get_model_by_id(model_id)

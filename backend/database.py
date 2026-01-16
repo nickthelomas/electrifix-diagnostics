@@ -472,6 +472,89 @@ def get_diagnosis_stats() -> Dict:
     }
 
 
+def create_baseline(baseline_data: Dict) -> int:
+    """Create a new baseline capture."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO baselines
+        (model_id, capture_type, raw_data, parsed_data, packet_count,
+         checksum_errors, capture_duration_ms, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        baseline_data.get("model_id"),
+        baseline_data.get("capture_type", "working"),
+        baseline_data.get("raw_data"),
+        json.dumps(baseline_data.get("parsed_data", {})),
+        baseline_data.get("packet_count", 0),
+        baseline_data.get("checksum_errors", 0),
+        baseline_data.get("capture_duration_ms"),
+        baseline_data.get("notes")
+    ))
+    baseline_id = cursor.lastrowid
+
+    # Update model to indicate it has a baseline
+    cursor.execute('''
+        UPDATE scooter_models SET has_baseline = 1 WHERE id = ?
+    ''', (baseline_data.get("model_id"),))
+
+    conn.commit()
+    conn.close()
+    return baseline_id
+
+
+def get_baseline_for_model(model_id: int) -> Optional[Dict]:
+    """Get the most recent baseline for a model."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM baselines WHERE model_id = ?
+        ORDER BY captured_at DESC LIMIT 1
+    ''', (model_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_model(model_id: int, model_data: Dict) -> bool:
+    """Update an existing scooter model."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE scooter_models
+        SET model_name = ?, manufacturer = ?, protocol = ?, baud_rate = ?,
+            voltage = ?, controller_type = ?, wiring_diagram = ?,
+            tap_point_instructions = ?, common_faults = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    ''', (
+        model_data.get("model_name"),
+        model_data.get("manufacturer"),
+        model_data.get("protocol", "unknown"),
+        model_data.get("baud_rate", 9600),
+        model_data.get("voltage"),
+        model_data.get("controller_type"),
+        json.dumps(model_data.get("wiring_diagram", {})),
+        model_data.get("tap_point_instructions"),
+        json.dumps(model_data.get("common_faults", [])),
+        model_id
+    ))
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return success
+
+
+def delete_model(model_id: int) -> bool:
+    """Delete a scooter model."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM scooter_models WHERE id = ?', (model_id,))
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return success
+
+
 if __name__ == "__main__":
     init_database()
     seed_default_models()
