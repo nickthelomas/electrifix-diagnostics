@@ -7,31 +7,39 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         [x-cloak] { display: none !important; }
+        .signal-indicator { transition: all 0.3s ease; }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div id="app">
-    
+
     <!-- Header -->
     <header class="bg-blue-800 text-white p-4">
         <h1 class="text-xl font-bold">ElectriFix Diagnostics</h1>
         <p class="text-blue-200 text-sm">UART Diagnostic Tool</p>
     </header>
-    
-    <!-- Navigation -->
+
+    <!-- Navigation - Fixed mobile layout -->
     <nav class="bg-white shadow flex overflow-x-auto">
-        <button onclick="showView('dashboard')" id="tab-dashboard" class="px-4 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600">Dashboard</button>
-        <button onclick="showView('diagnose')" id="tab-diagnose" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500">Diagnose</button>
-        <button onclick="showView('models')" id="tab-models" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500">Models</button>
-        <button onclick="showView('history')" id="tab-history" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500">History</button>
-        <button onclick="showView('settings')" id="tab-settings" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500">Settings</button>
+        <button onclick="showView('dashboard')" id="tab-dashboard" class="px-4 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600 whitespace-nowrap">Dashboard</button>
+        <button onclick="showView('diagnose')" id="tab-diagnose" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">Diagnose</button>
+        <button onclick="showView('guided')" id="tab-guided" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">Guided Test</button>
+        <button onclick="showView('models')" id="tab-models" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">Models</button>
+        <button onclick="showView('history')" id="tab-history" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">History</button>
+        <button onclick="showView('settings')" id="tab-settings" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">Settings</button>
     </nav>
-    
+
     <main class="p-4 max-w-4xl mx-auto">
-        
+
         <!-- Dashboard -->
         <div id="view-dashboard" class="view">
-            <div class="grid grid-cols-3 gap-3 mb-4">
+            <!-- Fixed mobile grid: 1 col on mobile, 3 cols on md+ -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
                 <div class="bg-white rounded-lg shadow p-4 text-center">
                     <p class="text-2xl font-bold" id="stat-total">0</p>
                     <p class="text-xs text-gray-500">Diagnoses</p>
@@ -45,57 +53,130 @@
                     <p class="text-xs text-gray-500">Completed</p>
                 </div>
             </div>
-            
-            <button onclick="showView('diagnose')" class="w-full py-4 bg-blue-600 text-white rounded-lg font-bold text-lg mb-4">
-                + New Diagnosis
-            </button>
-            
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <button onclick="showView('diagnose')" class="py-4 bg-blue-600 text-white rounded-lg font-bold text-lg">
+                    + New Diagnosis
+                </button>
+                <button onclick="showView('guided')" class="py-4 bg-purple-600 text-white rounded-lg font-bold text-lg">
+                    Guided Test
+                </button>
+            </div>
+
             <div class="bg-white rounded-lg shadow">
-                <div class="p-4 border-b font-semibold">Recent Diagnoses</div>
+                <div class="p-4 border-b font-semibold flex justify-between items-center">
+                    <span>Recent Diagnoses</span>
+                    <button onclick="exportHistoryCSV()" class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">Export CSV</button>
+                </div>
                 <div id="recent-list" class="p-4 text-gray-500 text-center">
                     No diagnoses yet
                 </div>
             </div>
         </div>
-        
+
         <!-- Diagnose -->
         <div id="view-diagnose" class="view hidden">
             <div class="bg-white rounded-lg shadow p-4">
                 <h2 class="text-lg font-bold mb-4">New Diagnosis</h2>
-                
+
                 <label class="block text-sm font-medium mb-1">Scooter Model</label>
-                <select id="model-select" class="w-full p-3 border rounded-lg mb-4">
+                <select id="model-select" class="w-full p-3 border rounded-lg mb-4" onchange="onModelSelect()">
                     <option value="">Loading models...</option>
                 </select>
-                
+
+                <!-- Wiring Diagram Display -->
+                <div id="wiring-diagram-section" class="mb-4 hidden">
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h3 class="font-semibold text-blue-800 mb-2">Tap Point Instructions</h3>
+                        <p id="tap-instructions" class="text-sm text-blue-700 mb-3"></p>
+                        <div id="wiring-image-container" class="hidden">
+                            <img id="wiring-image" class="max-w-full h-auto rounded border" alt="Wiring Diagram">
+                        </div>
+                        <div id="wiring-pins" class="mt-3 text-sm"></div>
+                    </div>
+                </div>
+
                 <label class="block text-sm font-medium mb-1">Symptoms</label>
                 <textarea id="symptoms" class="w-full p-3 border rounded-lg mb-4 h-24" placeholder="Describe the issue..."></textarea>
-                
-                <label class="block text-sm font-medium mb-1">Serial Port</label>
-                <select id="port-select" class="w-full p-3 border rounded-lg mb-4">
-                    <option value="">Loading ports...</option>
-                </select>
-                
-                <label class="block text-sm font-medium mb-1">Baud Rate</label>
-                <div class="flex gap-2 mb-4">
-                    <select id="baud-select" class="flex-1 p-3 border rounded-lg">
-                        <option value="1200">1200 (JP/QS-S4)</option>
-                        <option value="9600">9600</option>
-                        <option value="115200">115200 (Ninebot)</option>
+
+                <!-- Simulation Mode Toggle -->
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="simulation-mode" class="mr-3 h-5 w-5" onchange="toggleSimulationMode()">
+                        <span class="font-medium">Use Simulated Data</span>
+                    </label>
+                    <p class="text-sm text-yellow-700 mt-1">Test the UI without a real scooter connected</p>
+
+                    <div id="simulation-options" class="mt-3 hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Protocol</label>
+                                <select id="sim-protocol" class="w-full p-2 border rounded">
+                                    <option value="jp_qs_s4">JP/QS-S4 (1200 baud)</option>
+                                    <option value="ninebot">Ninebot (115200 baud)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Inject Fault</label>
+                                <select id="sim-fault" class="w-full p-2 border rounded">
+                                    <option value="none">None (Normal)</option>
+                                    <option value="stuck_throttle">Stuck Throttle</option>
+                                    <option value="checksum_errors">Checksum Errors</option>
+                                    <option value="no_response">No Response</option>
+                                    <option value="intermittent">Intermittent Connection</option>
+                                    <option value="overvoltage">Overvoltage</option>
+                                    <option value="undervoltage">Undervoltage</option>
+                                    <option value="motor_error">Motor Error</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Serial Port Selection (hidden in simulation mode) -->
+                <div id="serial-section">
+                    <label class="block text-sm font-medium mb-1">Serial Port</label>
+                    <select id="port-select" class="w-full p-3 border rounded-lg mb-4">
+                        <option value="">Loading ports...</option>
                     </select>
-                    <button onclick="autoDetectBaud()" id="btn-detect" class="px-4 py-3 bg-purple-600 text-white rounded-lg font-medium">Auto-Detect</button>
+
+                    <label class="block text-sm font-medium mb-1">Baud Rate</label>
+                    <div class="flex gap-2 mb-4">
+                        <select id="baud-select" class="flex-1 p-3 border rounded-lg">
+                            <option value="1200">1200 (JP/QS-S4)</option>
+                            <option value="9600">9600</option>
+                            <option value="115200">115200 (Ninebot)</option>
+                        </select>
+                        <button onclick="autoDetectBaud()" id="btn-detect" class="px-4 py-3 bg-purple-600 text-white rounded-lg font-medium">Auto-Detect</button>
+                    </div>
                 </div>
 
                 <div class="flex gap-2 mb-4">
                     <button onclick="startCapture()" id="btn-start" class="flex-1 py-3 bg-green-600 text-white rounded-lg font-medium">Start Capture</button>
                     <button onclick="stopCapture()" id="btn-stop" class="flex-1 py-3 bg-red-600 text-white rounded-lg font-medium hidden">Stop Capture</button>
                 </div>
-                
+
+                <!-- Signal Quality Indicator -->
+                <div id="signal-quality" class="mb-4 hidden">
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <span class="font-medium">Signal Quality</span>
+                        <div class="flex items-center gap-2">
+                            <div id="signal-bar" class="w-24 h-4 bg-gray-200 rounded-full overflow-hidden">
+                                <div id="signal-fill" class="h-full bg-green-500 transition-all" style="width: 0%"></div>
+                            </div>
+                            <span id="signal-text" class="text-sm font-medium">--</span>
+                            <div id="signal-dot" class="w-3 h-3 rounded-full bg-gray-400"></div>
+                        </div>
+                    </div>
+                    <p id="signal-detail" class="text-xs text-gray-500 mt-1"></p>
+                </div>
+
                 <div id="capture-stats" class="text-center p-4 bg-gray-50 rounded-lg hidden">
                     <p class="text-3xl font-bold" id="bytes-count">0</p>
                     <p class="text-sm text-gray-500">bytes captured</p>
+                    <p class="text-xs text-gray-400 mt-1" id="packet-count">0 packets</p>
                 </div>
-                
+
                 <button onclick="runAnalysis()" id="btn-analyze" class="w-full py-4 bg-blue-600 text-white rounded-lg font-bold mt-4 hidden">
                     Analyze Capture
                 </button>
@@ -122,10 +203,66 @@
                         <h4 class="font-bold mb-2">AI Analysis</h4>
                         <div id="ai-content" class="bg-blue-50 rounded-lg p-4 text-sm whitespace-pre-wrap"></div>
                     </div>
+
+                    <!-- Export Buttons -->
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        <button onclick="exportDiagnosisPDF()" id="btn-export-pdf" class="px-4 py-2 bg-red-600 text-white rounded font-medium text-sm">
+                            Export PDF Report
+                        </button>
+                        <button onclick="exportCaptureBin()" id="btn-export-bin" class="px-4 py-2 bg-gray-600 text-white rounded font-medium text-sm">
+                            Export Raw Data
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
-        
+
+        <!-- Guided Test Sequence -->
+        <div id="view-guided" class="view hidden">
+            <div class="bg-white rounded-lg shadow p-4">
+                <h2 class="text-lg font-bold mb-4">Guided Test Sequence</h2>
+
+                <!-- Progress Bar -->
+                <div class="mb-6">
+                    <div class="flex justify-between text-sm text-gray-500 mb-1">
+                        <span>Progress</span>
+                        <span id="guided-progress-text">Step 0 of 8</span>
+                    </div>
+                    <div class="w-full h-2 bg-gray-200 rounded-full">
+                        <div id="guided-progress-bar" class="h-full bg-blue-500 rounded-full transition-all" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Current Step -->
+                <div id="guided-step-container" class="border rounded-lg p-4 mb-4">
+                    <div class="flex items-start gap-3">
+                        <div id="step-number-badge" class="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
+                        <div class="flex-1">
+                            <h3 id="step-title" class="font-bold text-lg mb-2">Loading...</h3>
+                            <p id="step-instruction" class="text-gray-600 mb-3"></p>
+                            <div class="bg-green-50 border border-green-200 rounded p-2">
+                                <span class="text-sm font-medium text-green-700">Expected: </span>
+                                <span id="step-expected" class="text-sm text-green-600"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step Actions -->
+                <div id="step-actions" class="flex flex-wrap gap-2 mb-4"></div>
+
+                <!-- Navigation -->
+                <div class="flex justify-between">
+                    <button onclick="prevGuidedStep()" id="btn-prev-step" class="px-4 py-2 bg-gray-200 text-gray-700 rounded font-medium" disabled>
+                        Previous
+                    </button>
+                    <button onclick="nextGuidedStep()" id="btn-next-step" class="px-4 py-2 bg-blue-600 text-white rounded font-medium">
+                        Next Step
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Models -->
         <div id="view-models" class="view hidden">
             <div class="bg-white rounded-lg shadow">
@@ -133,63 +270,87 @@
                 <div id="models-list" class="divide-y"></div>
             </div>
         </div>
-        
+
         <!-- History -->
         <div id="view-history" class="view hidden">
             <div class="bg-white rounded-lg shadow">
-                <div class="p-4 border-b font-semibold">Diagnosis History</div>
+                <div class="p-4 border-b font-semibold flex justify-between items-center">
+                    <span>Diagnosis History</span>
+                    <button onclick="exportHistoryCSV()" class="px-3 py-1 bg-green-600 text-white rounded text-sm">Export CSV</button>
+                </div>
                 <div id="history-list" class="p-4 text-gray-500 text-center">
                     No history yet
                 </div>
             </div>
         </div>
-        
+
         <!-- Settings -->
         <div id="view-settings" class="view hidden">
             <div class="bg-white rounded-lg shadow p-4">
                 <h2 class="text-lg font-bold mb-4">Settings</h2>
-                
+
                 <label class="block text-sm font-medium mb-1">Claude API Key</label>
-                <input type="password" id="api-key" class="w-full p-3 border rounded-lg mb-2" placeholder="sk-ant-...">
+                <input type="password" id="api-key" class="w-full p-3 border rounded-lg mb-1" placeholder="sk-or-...">
+                <p class="text-xs text-gray-500 mb-2">Must start with sk- or pk- (OpenRouter API key)</p>
                 <button onclick="saveApiKey()" class="w-full py-3 bg-blue-600 text-white rounded-lg font-medium mb-4">Save API Key</button>
-                
+
                 <div id="ai-status" class="text-sm mb-4"></div>
-                
+
                 <label class="block text-sm font-medium mb-1">Serial Ports</label>
                 <div id="ports-list" class="bg-gray-50 rounded-lg p-3">
                     <p class="text-gray-500">Loading...</p>
                 </div>
                 <button onclick="loadPorts()" class="mt-2 text-blue-600 text-sm">Refresh Ports</button>
+
+                <!-- Database Health -->
+                <div class="mt-6">
+                    <h3 class="font-semibold mb-2">System Health</h3>
+                    <div id="db-health" class="bg-gray-50 rounded-lg p-3 text-sm">
+                        <button onclick="checkDatabaseHealth()" class="text-blue-600">Check Database Health</button>
+                    </div>
+                </div>
+
+                <!-- Simulation Mode Config -->
+                <div class="mt-6">
+                    <h3 class="font-semibold mb-2">Simulation Settings</h3>
+                    <div id="sim-status" class="bg-gray-50 rounded-lg p-3 text-sm">
+                        Simulation mode: <span id="sim-status-text">Disabled</span>
+                    </div>
+                </div>
             </div>
         </div>
-        
+
     </main>
-    
+
     <!-- Toast -->
     <div id="toast" class="fixed bottom-4 left-4 right-4 bg-green-600 text-white p-3 rounded-lg text-center hidden"></div>
-    
+
     </div>
-    
+
     <script>
         const API = window.location.origin;
         let isCapturing = false;
         let captureBytes = 0;
-        
+        let currentDiagnosisId = null;
+        let guidedSteps = [];
+        let currentGuidedStep = 0;
+        let simulationMode = false;
+        let signalPollInterval = null;
+
         // View switching
         function showView(view) {
-            // Hide all views
             document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
-            // Show selected view
             document.getElementById('view-' + view).classList.remove('hidden');
-            // Update tabs
             document.querySelectorAll('nav button').forEach(btn => {
                 btn.classList.remove('border-blue-500', 'text-blue-600');
                 btn.classList.add('border-transparent', 'text-gray-500');
             });
             document.getElementById('tab-' + view).classList.remove('border-transparent', 'text-gray-500');
             document.getElementById('tab-' + view).classList.add('border-blue-500', 'text-blue-600');
+
+            if (view === 'guided') loadGuidedSteps();
         }
-        
+
         // Toast
         function showToast(msg, isError) {
             const toast = document.getElementById('toast');
@@ -197,7 +358,7 @@
             toast.className = 'fixed bottom-4 left-4 right-4 p-3 rounded-lg text-center ' + (isError ? 'bg-red-600' : 'bg-green-600') + ' text-white';
             setTimeout(() => toast.classList.add('hidden'), 3000);
         }
-        
+
         // Load data
         async function loadStats() {
             try {
@@ -208,65 +369,125 @@
                 document.getElementById('stat-completed').textContent = data.completed_diagnoses || 0;
             } catch(e) { console.error(e); }
         }
-        
+
         async function loadModels() {
             try {
                 const res = await fetch(API + '/api/models');
                 const data = await res.json();
                 const select = document.getElementById('model-select');
                 const list = document.getElementById('models-list');
-                
+
                 select.innerHTML = '<option value="">-- Select model --</option>';
                 list.innerHTML = '';
-                
+
                 (data.models || []).forEach(m => {
-                    select.innerHTML += '<option value="' + m.id + '">' + m.manufacturer + ' ' + m.model_name + '</option>';
-                    list.innerHTML += '<div class="p-4"><p class="font-medium">' + m.model_name + '</p><p class="text-sm text-gray-500">' + m.manufacturer + ' | ' + m.protocol + ' | ' + m.baud_rate + ' baud</p></div>';
+                    select.innerHTML += `<option value="${m.id}" data-baud="${m.baud_rate}" data-protocol="${m.protocol}">${m.manufacturer} ${m.model_name}</option>`;
+                    list.innerHTML += `<div class="p-4">
+                        <p class="font-medium">${m.model_name}</p>
+                        <p class="text-sm text-gray-500">${m.manufacturer} | ${m.protocol} | ${m.baud_rate} baud</p>
+                    </div>`;
                 });
             } catch(e) { console.error(e); }
         }
-        
+
+        async function onModelSelect() {
+            const select = document.getElementById('model-select');
+            const modelId = select.value;
+
+            if (!modelId) {
+                document.getElementById('wiring-diagram-section').classList.add('hidden');
+                return;
+            }
+
+            // Auto-set baud rate
+            const option = select.options[select.selectedIndex];
+            if (option.dataset.baud) {
+                document.getElementById('baud-select').value = option.dataset.baud;
+            }
+            if (option.dataset.protocol) {
+                document.getElementById('sim-protocol').value = option.dataset.protocol;
+            }
+
+            // Load wiring diagram
+            try {
+                const res = await fetch(API + '/api/models/' + modelId + '/wiring-diagram');
+                const data = await res.json();
+
+                const section = document.getElementById('wiring-diagram-section');
+                section.classList.remove('hidden');
+
+                document.getElementById('tap-instructions').textContent = data.tap_point_instructions || 'No instructions available';
+
+                // Show image if available
+                const imgContainer = document.getElementById('wiring-image-container');
+                const img = document.getElementById('wiring-image');
+                if (data.image_url) {
+                    img.src = data.image_url;
+                    imgContainer.classList.remove('hidden');
+                } else {
+                    imgContainer.classList.add('hidden');
+                }
+
+                // Show pin definitions
+                const pinsDiv = document.getElementById('wiring-pins');
+                if (data.wiring_diagram && Object.keys(data.wiring_diagram).length > 0) {
+                    let pinsHtml = '<div class="grid grid-cols-2 gap-1 text-xs">';
+                    for (const [key, value] of Object.entries(data.wiring_diagram)) {
+                        if (key.startsWith('pin_')) {
+                            pinsHtml += `<div><span class="font-medium">${key.replace('_', ' ').toUpperCase()}:</span> ${value}</div>`;
+                        }
+                    }
+                    pinsHtml += '</div>';
+                    pinsDiv.innerHTML = pinsHtml;
+                } else {
+                    pinsDiv.innerHTML = '';
+                }
+            } catch(e) {
+                document.getElementById('wiring-diagram-section').classList.add('hidden');
+            }
+        }
+
         async function loadPorts() {
             try {
                 const res = await fetch(API + '/api/serial/ports');
                 const data = await res.json();
                 const select = document.getElementById('port-select');
                 const list = document.getElementById('ports-list');
-                
+
                 select.innerHTML = '<option value="">-- Select port --</option>';
                 list.innerHTML = '';
-                
+
                 const usbPorts = (data.ports || []).filter(p => p.is_usb || p.device.includes('USB'));
                 const allPorts = usbPorts.length > 0 ? usbPorts : (data.ports || []).slice(0, 5);
-                
+
                 if (allPorts.length === 0) {
                     list.innerHTML = '<p class="text-gray-500">No ports found</p>';
                 } else {
                     allPorts.forEach(p => {
-                        select.innerHTML += '<option value="' + p.device + '">' + p.device + '</option>';
-                        list.innerHTML += '<p class="py-1">' + p.device + ' <span class="text-gray-400">' + p.description + '</span></p>';
+                        select.innerHTML += `<option value="${p.device}">${p.device}</option>`;
+                        list.innerHTML += `<p class="py-1">${p.device} <span class="text-gray-400">${p.description}</span></p>`;
                     });
                 }
             } catch(e) { console.error(e); }
         }
-        
+
         async function loadStatus() {
             try {
                 const res = await fetch(API + '/api/status');
                 const data = await res.json();
-                document.getElementById('ai-status').innerHTML = data.ai_configured 
-                    ? '<span class="text-green-600">AI Connected</span>' 
-                    : '<span class="text-yellow-600">AI Not Configured</span>';
+                document.getElementById('ai-status').innerHTML = data.ai_configured
+                    ? '<span class="text-green-600">✓ AI Connected</span>'
+                    : '<span class="text-yellow-600">⚠ AI Not Configured</span>';
             } catch(e) { console.error(e); }
         }
-        
+
         async function loadHistory() {
             try {
                 const res = await fetch(API + '/api/diagnose/history?limit=20');
                 const data = await res.json();
                 const list = document.getElementById('history-list');
                 const recent = document.getElementById('recent-list');
-                
+
                 if ((data.history || []).length === 0) {
                     list.innerHTML = '<p class="p-4 text-gray-500 text-center">No history yet</p>';
                     recent.innerHTML = '<p class="text-gray-500">No diagnoses yet</p>';
@@ -274,15 +495,36 @@
                     list.innerHTML = '';
                     recent.innerHTML = '';
                     data.history.slice(0, 5).forEach(d => {
-                        recent.innerHTML += '<div class="py-2 border-b"><p class="font-medium">' + d.model_name + '</p><p class="text-sm text-gray-500">' + (d.customer_symptoms || 'No symptoms') + '</p></div>';
+                        recent.innerHTML += `<div class="py-2 border-b cursor-pointer hover:bg-gray-50" onclick="viewDiagnosis(${d.id})">
+                            <p class="font-medium">${d.model_name}</p>
+                            <p class="text-sm text-gray-500">${d.customer_symptoms || 'No symptoms'}</p>
+                        </div>`;
                     });
                     data.history.forEach(d => {
-                        list.innerHTML += '<div class="p-4 border-b"><p class="font-medium">' + d.model_name + '</p><p class="text-sm text-gray-500">' + (d.customer_symptoms || 'No symptoms') + '</p><span class="text-xs px-2 py-1 rounded bg-gray-100">' + d.status + '</span></div>';
+                        const statusColor = d.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                           d.status === 'diagnosed' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100';
+                        list.innerHTML += `<div class="p-4 border-b cursor-pointer hover:bg-gray-50" onclick="viewDiagnosis(${d.id})">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="font-medium">${d.model_name}</p>
+                                    <p class="text-sm text-gray-500">${d.customer_symptoms || 'No symptoms'}</p>
+                                </div>
+                                <span class="text-xs px-2 py-1 rounded ${statusColor}">${d.status}</span>
+                            </div>
+                        </div>`;
                     });
                 }
             } catch(e) { console.error(e); }
         }
-        
+
+        // Simulation Mode
+        function toggleSimulationMode() {
+            simulationMode = document.getElementById('simulation-mode').checked;
+            document.getElementById('simulation-options').classList.toggle('hidden', !simulationMode);
+            document.getElementById('serial-section').classList.toggle('hidden', simulationMode);
+            document.getElementById('sim-status-text').textContent = simulationMode ? 'Enabled' : 'Disabled';
+        }
+
         // Auto-detect baud rate
         async function autoDetectBaud() {
             const port = document.getElementById('port-select').value;
@@ -311,30 +553,58 @@
 
         // Capture
         async function startCapture() {
+            if (simulationMode) {
+                return startSimulationCapture();
+            }
+
             const port = document.getElementById('port-select').value;
             const baud = document.getElementById('baud-select').value;
             if (!port) { showToast('Select a port first', true); return; }
-            
+
             try {
                 const res = await fetch(API + '/api/serial/start?port=' + encodeURIComponent(port) + '&baud_rate=' + baud, {method: 'POST'});
                 const data = await res.json();
                 if (data.status === 'capturing') {
-                    isCapturing = true;
-                    captureBytes = 0;
-                    document.getElementById('btn-start').classList.add('hidden');
-                    document.getElementById('btn-stop').classList.remove('hidden');
-                    document.getElementById('capture-stats').classList.remove('hidden');
-                    showToast('Capture started');
-                    pollCapture();
+                    startCaptureUI();
                 }
             } catch(e) { showToast('Failed to start', true); }
         }
-        
+
+        async function startSimulationCapture() {
+            const protocol = document.getElementById('sim-protocol').value;
+            const fault = document.getElementById('sim-fault').value;
+
+            try {
+                const res = await fetch(API + '/api/simulation/start?protocol=' + protocol + '&fault=' + fault, {method: 'POST'});
+                const data = await res.json();
+                if (data.status === 'capturing') {
+                    startCaptureUI();
+                    showToast('Simulation started (' + protocol + ')');
+                }
+            } catch(e) { showToast('Failed to start simulation', true); }
+        }
+
+        function startCaptureUI() {
+            isCapturing = true;
+            captureBytes = 0;
+            document.getElementById('btn-start').classList.add('hidden');
+            document.getElementById('btn-stop').classList.remove('hidden');
+            document.getElementById('capture-stats').classList.remove('hidden');
+            document.getElementById('signal-quality').classList.remove('hidden');
+            showToast('Capture started');
+            pollCapture();
+            signalPollInterval = setInterval(pollSignalQuality, 1000);
+        }
+
         async function stopCapture() {
             try {
                 const res = await fetch(API + '/api/serial/stop', {method: 'POST'});
                 const data = await res.json();
                 isCapturing = false;
+                if (signalPollInterval) {
+                    clearInterval(signalPollInterval);
+                    signalPollInterval = null;
+                }
                 document.getElementById('btn-start').classList.remove('hidden');
                 document.getElementById('btn-stop').classList.add('hidden');
                 if (data.total_bytes > 0) {
@@ -345,7 +615,7 @@
                 }
             } catch(e) { showToast('Failed to stop', true); }
         }
-        
+
         async function pollCapture() {
             if (!isCapturing) return;
             try {
@@ -353,11 +623,53 @@
                 const data = await res.json();
                 if (data.capturing) {
                     document.getElementById('bytes-count').textContent = data.total_bytes;
+                    document.getElementById('packet-count').textContent = data.packet_count + ' packets';
                     setTimeout(pollCapture, 500);
                 }
             } catch(e) {}
         }
-        
+
+        async function pollSignalQuality() {
+            if (!isCapturing) return;
+            try {
+                const res = await fetch(API + '/api/serial/signal-quality');
+                const data = await res.json();
+                updateSignalQuality(data);
+            } catch(e) {}
+        }
+
+        function updateSignalQuality(data) {
+            const fill = document.getElementById('signal-fill');
+            const text = document.getElementById('signal-text');
+            const dot = document.getElementById('signal-dot');
+            const detail = document.getElementById('signal-detail');
+
+            const errorRate = data.checksum_error_rate || 0;
+            const quality = 100 - Math.min(100, errorRate * 5);
+
+            fill.style.width = quality + '%';
+
+            if (data.status === 'no_data') {
+                fill.className = 'h-full bg-gray-400 transition-all';
+                dot.className = 'w-3 h-3 rounded-full bg-gray-400';
+                text.textContent = 'No Data';
+            } else if (data.color === 'green') {
+                fill.className = 'h-full bg-green-500 transition-all';
+                dot.className = 'w-3 h-3 rounded-full bg-green-500 pulse';
+                text.textContent = 'Good';
+            } else if (data.color === 'yellow') {
+                fill.className = 'h-full bg-yellow-500 transition-all';
+                dot.className = 'w-3 h-3 rounded-full bg-yellow-500 pulse';
+                text.textContent = 'Fair';
+            } else {
+                fill.className = 'h-full bg-red-500 transition-all';
+                dot.className = 'w-3 h-3 rounded-full bg-red-500 pulse';
+                text.textContent = 'Poor';
+            }
+
+            detail.textContent = `${data.total_packets} packets, ${errorRate}% checksum errors`;
+        }
+
         async function runAnalysis() {
             const modelId = document.getElementById('model-select').value;
             const symptoms = document.getElementById('symptoms').value;
@@ -368,6 +680,7 @@
                 const res = await fetch(API + '/api/diagnose/analyze?model_id=' + modelId + '&customer_symptoms=' + encodeURIComponent(symptoms), {method: 'POST'});
                 const data = await res.json();
                 if (data.diagnosis_id) {
+                    currentDiagnosisId = data.diagnosis_id;
                     showToast('Analysis complete!');
                     loadHistory();
                     displayResults(data);
@@ -381,7 +694,6 @@
             const section = document.getElementById('results-section');
             section.classList.remove('hidden');
 
-            // Basic stats
             document.getElementById('result-protocol').textContent = data.analysis?.protocol || 'Unknown';
             const score = data.analysis?.match_percentage || 0;
             const scoreEl = document.getElementById('result-score');
@@ -389,22 +701,20 @@
             scoreEl.className = 'font-medium ' + (score >= 70 ? 'text-green-600' : score >= 40 ? 'text-yellow-600' : 'text-red-600');
             document.getElementById('result-issues').textContent = (data.analysis?.anomalies?.length || 0);
 
-            // Anomalies list
             const anomaliesList = document.getElementById('anomalies-list');
             const anomalies = data.analysis?.anomalies || [];
             if (anomalies.length > 0) {
                 anomaliesList.innerHTML = '<h4 class="font-bold mb-2">Detected Issues</h4>' +
                     anomalies.map(a => {
                         const color = a.severity === 'critical' ? 'red' : a.severity === 'high' ? 'orange' : a.severity === 'medium' ? 'yellow' : 'gray';
-                        return '<div class="p-2 mb-2 rounded bg-' + color + '-50 border-l-4 border-' + color + '-500">' +
-                            '<span class="text-xs font-bold uppercase text-' + color + '-700">' + a.severity + '</span> ' +
-                            '<span class="text-sm">' + a.description + '</span></div>';
+                        return `<div class="p-2 mb-2 rounded bg-${color}-50 border-l-4 border-${color}-500">
+                            <span class="text-xs font-bold uppercase text-${color}-700">${a.severity}</span>
+                            <span class="text-sm">${a.description}</span></div>`;
                     }).join('');
             } else {
                 anomaliesList.innerHTML = '<p class="text-green-600">No issues detected</p>';
             }
 
-            // AI diagnosis
             const aiSection = document.getElementById('ai-diagnosis');
             const aiContent = document.getElementById('ai-content');
             if (data.ai_diagnosis?.diagnosis) {
@@ -414,22 +724,145 @@
                 aiSection.classList.add('hidden');
             }
         }
-        
+
+        // Export Functions
+        async function exportDiagnosisPDF() {
+            if (!currentDiagnosisId) { showToast('No diagnosis to export', true); return; }
+            window.open(API + '/api/export/diagnosis/' + currentDiagnosisId + '/pdf', '_blank');
+        }
+
+        async function exportCaptureBin() {
+            if (!currentDiagnosisId) { showToast('No diagnosis to export', true); return; }
+            window.open(API + '/api/export/capture/' + currentDiagnosisId + '/bin', '_blank');
+        }
+
+        function exportHistoryCSV() {
+            window.open(API + '/api/export/history/csv', '_blank');
+        }
+
+        async function viewDiagnosis(id) {
+            currentDiagnosisId = id;
+            try {
+                const res = await fetch(API + '/api/diagnose/' + id);
+                const data = await res.json();
+                showView('diagnose');
+                displayResults({
+                    diagnosis_id: id,
+                    analysis: {
+                        protocol: data.packet_stats ? JSON.parse(data.packet_stats).protocol : 'Unknown',
+                        match_percentage: data.comparison_results ? JSON.parse(data.comparison_results).match_percentage : 0,
+                        anomalies: (data.raw_anomalies ? JSON.parse(data.raw_anomalies) : []).map(a => ({description: a, severity: 'medium'}))
+                    },
+                    ai_diagnosis: {
+                        diagnosis: data.ai_diagnosis,
+                        confidence: data.ai_confidence
+                    }
+                });
+            } catch(e) { showToast('Failed to load diagnosis', true); }
+        }
+
+        // Guided Test Sequence
+        async function loadGuidedSteps() {
+            try {
+                const res = await fetch(API + '/api/guided-test/steps');
+                const data = await res.json();
+                guidedSteps = data.steps || [];
+                currentGuidedStep = 0;
+                displayGuidedStep();
+            } catch(e) { console.error(e); }
+        }
+
+        function displayGuidedStep() {
+            if (!guidedSteps.length) return;
+
+            const step = guidedSteps[currentGuidedStep];
+            document.getElementById('step-number-badge').textContent = step.step_number;
+            document.getElementById('step-title').textContent = step.title;
+            document.getElementById('step-instruction').textContent = step.instruction;
+            document.getElementById('step-expected').textContent = step.expected_result;
+
+            const progress = ((currentGuidedStep + 1) / guidedSteps.length) * 100;
+            document.getElementById('guided-progress-bar').style.width = progress + '%';
+            document.getElementById('guided-progress-text').textContent = `Step ${currentGuidedStep + 1} of ${guidedSteps.length}`;
+
+            document.getElementById('btn-prev-step').disabled = currentGuidedStep === 0;
+            document.getElementById('btn-next-step').textContent = currentGuidedStep === guidedSteps.length - 1 ? 'Finish' : 'Next Step';
+
+            // Show action buttons
+            const actionsDiv = document.getElementById('step-actions');
+            actionsDiv.innerHTML = '';
+            if (step.action === 'capture') {
+                actionsDiv.innerHTML = `
+                    <button onclick="showView('diagnose'); startCapture();" class="px-4 py-2 bg-green-600 text-white rounded">Start Capture</button>
+                    <button onclick="stopCapture();" class="px-4 py-2 bg-red-600 text-white rounded">Stop Capture</button>
+                `;
+            } else if (step.action === 'analyze') {
+                actionsDiv.innerHTML = `<button onclick="showView('diagnose'); runAnalysis();" class="px-4 py-2 bg-blue-600 text-white rounded">Run Analysis</button>`;
+            } else if (step.action === 'connect') {
+                actionsDiv.innerHTML = `<button onclick="loadPorts();" class="px-4 py-2 bg-purple-600 text-white rounded">Refresh Ports</button>`;
+            }
+        }
+
+        function nextGuidedStep() {
+            if (currentGuidedStep < guidedSteps.length - 1) {
+                currentGuidedStep++;
+                displayGuidedStep();
+            } else {
+                showToast('Test sequence complete!');
+                showView('diagnose');
+            }
+        }
+
+        function prevGuidedStep() {
+            if (currentGuidedStep > 0) {
+                currentGuidedStep--;
+                displayGuidedStep();
+            }
+        }
+
         async function saveApiKey() {
             const key = document.getElementById('api-key').value;
             if (!key) { showToast('Enter API key', true); return; }
+
+            // Basic validation
+            if (!key.startsWith('sk-') && !key.startsWith('pk-')) {
+                showToast('API key should start with sk- or pk-', true);
+                return;
+            }
+
             try {
                 const res = await fetch(API + '/api/settings/api-key', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({api_key: key})
                 });
-                showToast('API key saved');
-                document.getElementById('api-key').value = '';
-                loadStatus();
+                const data = await res.json();
+                if (data.message && !data.detail) {
+                    showToast('API key saved');
+                    document.getElementById('api-key').value = '';
+                    loadStatus();
+                } else {
+                    showToast(data.detail || 'Failed to save', true);
+                }
             } catch(e) { showToast('Failed to save', true); }
         }
-        
+
+        async function checkDatabaseHealth() {
+            try {
+                const res = await fetch(API + '/api/health/database');
+                const data = await res.json();
+                const div = document.getElementById('db-health');
+                if (data.healthy) {
+                    div.innerHTML = '<span class="text-green-600">✓ Database healthy</span>';
+                } else {
+                    div.innerHTML = `<span class="text-red-600">✗ Issues found:</span><ul class="list-disc list-inside mt-1">${data.issues.map(i => '<li>' + i + '</li>').join('')}</ul>`;
+                }
+                if (data.warnings?.length) {
+                    div.innerHTML += `<p class="text-yellow-600 mt-2">Warnings: ${data.warnings.length}</p>`;
+                }
+            } catch(e) { showToast('Health check failed', true); }
+        }
+
         // Init
         document.addEventListener('DOMContentLoaded', function() {
             loadStats();
