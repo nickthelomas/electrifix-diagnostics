@@ -13,6 +13,52 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
+
+        /* Component Test Animations */
+        @keyframes wheel-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .wheel-spinning {
+            animation: wheel-spin var(--spin-duration, 2s) linear infinite;
+            transform-origin: center;
+        }
+        @keyframes brake-pulse {
+            0%, 100% { filter: drop-shadow(0 0 3px #ef4444); }
+            50% { filter: drop-shadow(0 0 8px #ef4444); }
+        }
+        .brake-active {
+            animation: brake-pulse 0.5s ease-in-out infinite;
+        }
+        @keyframes headlight-glow {
+            0%, 100% { opacity: 0.9; filter: drop-shadow(0 0 5px #fbbf24); }
+            50% { opacity: 1; filter: drop-shadow(0 0 10px #fbbf24); }
+        }
+        .headlight-on {
+            animation: headlight-glow 1s ease-in-out infinite;
+            fill: #fbbf24 !important;
+            opacity: 1 !important;
+        }
+        @keyframes motor-heat {
+            0%, 100% { fill: #4b5563; }
+            50% { fill: #f97316; }
+        }
+        .motor-hot {
+            animation: motor-heat 1s ease-in-out infinite;
+        }
+        @keyframes controller-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .controller-active {
+            animation: controller-pulse 0.3s ease-in-out;
+        }
+        .component-ok { filter: drop-shadow(0 0 4px #22c55e); }
+        .component-warning { filter: drop-shadow(0 0 4px #f59e0b); }
+        .component-error { filter: drop-shadow(0 0 4px #ef4444); }
+        .status-ok { color: #22c55e; }
+        .status-warning { color: #f59e0b; }
+        .status-error { color: #ef4444; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -28,6 +74,7 @@
     <nav class="bg-white shadow flex overflow-x-auto">
         <button onclick="showView('dashboard')" id="tab-dashboard" class="px-4 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600 whitespace-nowrap">Dashboard</button>
         <button onclick="showView('diagnose')" id="tab-diagnose" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">Diagnose</button>
+        <button onclick="showView('component-test')" id="tab-component-test" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">Component Test</button>
         <button onclick="showView('guided')" id="tab-guided" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">Guided Test</button>
         <button onclick="showView('models')" id="tab-models" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">Models</button>
         <button onclick="showView('history')" id="tab-history" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">History</button>
@@ -259,6 +306,282 @@
                     <button onclick="nextGuidedStep()" id="btn-next-step" class="px-4 py-2 bg-blue-600 text-white rounded font-medium">
                         Next Step
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Component Test -->
+        <div id="view-component-test" class="view hidden">
+            <div class="bg-white rounded-lg shadow p-4">
+                <h2 class="text-lg font-bold mb-4">Component Test - Live Diagnostics</h2>
+
+                <!-- Mode Selection & Status -->
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <button onclick="setComponentTestMode('learn')" id="btn-learn-mode" class="px-4 py-2 bg-purple-600 text-white rounded font-medium">Learn Mode</button>
+                    <button onclick="setComponentTestMode('test')" id="btn-test-mode" class="px-4 py-2 bg-blue-600 text-white rounded font-medium">Test Mode</button>
+                    <button onclick="connectComponentTest()" id="btn-ct-connect" class="px-4 py-2 bg-green-600 text-white rounded font-medium">Connect</button>
+                    <button onclick="disconnectComponentTest()" id="btn-ct-disconnect" class="px-4 py-2 bg-red-600 text-white rounded font-medium hidden">Stop</button>
+                </div>
+
+                <!-- Status Bar -->
+                <div id="ct-status" class="mb-4 p-3 bg-gray-100 rounded-lg text-sm">
+                    <span class="inline-block w-3 h-3 rounded-full bg-gray-400 mr-2" id="ct-status-dot"></span>
+                    <span id="ct-status-text">Not connected</span>
+                </div>
+
+                <!-- Model Selection -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Scooter Model</label>
+                    <select id="ct-model-select" class="w-full p-3 border rounded-lg" onchange="onCTModelSelect()">
+                        <option value="">-- Select model --</option>
+                    </select>
+                </div>
+
+                <!-- Main Layout: Scooter Diagram + Live Data -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <!-- Scooter Diagram -->
+                    <div class="bg-gray-50 rounded-lg p-4" id="scooter-diagram-container">
+                        <h3 class="font-semibold mb-3 text-center">Scooter Diagram</h3>
+                        <div class="relative w-full max-w-xs mx-auto">
+                            <!-- SVG Scooter Diagram -->
+                            <svg viewBox="0 0 200 200" class="w-full h-auto" id="scooter-svg">
+                                <!-- Background -->
+                                <rect x="0" y="0" width="200" height="200" fill="#f9fafb"/>
+
+                                <!-- Rear Wheel -->
+                                <g id="wheel-rear" transform="translate(50, 160)">
+                                    <circle cx="0" cy="0" r="25" fill="none" stroke="#374151" stroke-width="4"/>
+                                    <circle cx="0" cy="0" r="18" fill="none" stroke="#9ca3af" stroke-width="2"/>
+                                    <line x1="-15" y1="0" x2="15" y2="0" stroke="#9ca3af" stroke-width="2"/>
+                                    <line x1="0" y1="-15" x2="0" y2="15" stroke="#9ca3af" stroke-width="2"/>
+                                </g>
+
+                                <!-- Front Wheel -->
+                                <g id="wheel-front" transform="translate(150, 160)">
+                                    <circle cx="0" cy="0" r="25" fill="none" stroke="#374151" stroke-width="4"/>
+                                    <circle cx="0" cy="0" r="18" fill="none" stroke="#9ca3af" stroke-width="2"/>
+                                    <line x1="-15" y1="0" x2="15" y2="0" stroke="#9ca3af" stroke-width="2"/>
+                                    <line x1="0" y1="-15" x2="0" y2="15" stroke="#9ca3af" stroke-width="2"/>
+                                </g>
+
+                                <!-- Deck -->
+                                <rect id="deck" x="40" y="125" width="120" height="20" rx="5" fill="#1e40af"/>
+
+                                <!-- Battery (inside deck) -->
+                                <rect id="battery-indicator" x="50" y="130" width="60" height="10" rx="2" fill="#22c55e"/>
+
+                                <!-- Stem -->
+                                <line x1="150" y1="125" x2="160" y2="50" stroke="#374151" stroke-width="6" stroke-linecap="round"/>
+
+                                <!-- Handlebar -->
+                                <line x1="140" y1="50" x2="180" y2="50" stroke="#374151" stroke-width="4" stroke-linecap="round"/>
+
+                                <!-- Throttle Grip -->
+                                <rect id="throttle-grip" x="170" y="43" width="15" height="14" rx="3" fill="#6b7280"/>
+
+                                <!-- Brake Lever -->
+                                <g id="brake-lever" transform="translate(135, 45)">
+                                    <rect x="0" y="0" width="8" height="3" fill="#6b7280"/>
+                                    <rect id="brake-lever-arm" x="-5" y="0" width="10" height="3" rx="1" fill="#9ca3af"/>
+                                </g>
+
+                                <!-- Display/Dashboard -->
+                                <rect id="dashboard-display" x="150" y="55" width="15" height="12" rx="2" fill="#1f2937"/>
+                                <rect x="152" y="57" width="11" height="8" rx="1" fill="#10b981" id="display-screen"/>
+
+                                <!-- Headlight -->
+                                <circle id="headlight" cx="165" cy="40" r="5" fill="#fbbf24" opacity="0.3"/>
+
+                                <!-- Motor (rear hub) -->
+                                <circle id="motor" cx="50" cy="160" r="12" fill="#4b5563"/>
+
+                                <!-- Controller Box -->
+                                <rect id="controller-box" x="70" y="100" width="25" height="15" rx="2" fill="#374151"/>
+                            </svg>
+
+                            <!-- Component Labels (overlays) -->
+                            <div id="ct-labels" class="absolute inset-0 pointer-events-none">
+                                <span class="absolute text-xs bg-white/80 px-1 rounded" style="top: 15%; left: 85%;" id="label-headlight">Light</span>
+                                <span class="absolute text-xs bg-white/80 px-1 rounded" style="top: 20%; left: 65%;" id="label-throttle">Throttle</span>
+                                <span class="absolute text-xs bg-white/80 px-1 rounded" style="top: 45%; left: 30%;" id="label-controller">Ctrl</span>
+                                <span class="absolute text-xs bg-white/80 px-1 rounded" style="top: 75%; left: 5%;" id="label-motor">Motor</span>
+                                <span class="absolute text-xs bg-white/80 px-1 rounded" style="top: 60%; left: 20%;" id="label-battery">Battery</span>
+                            </div>
+                        </div>
+
+                        <!-- Quick Status Icons -->
+                        <div class="flex justify-around mt-4 text-center">
+                            <div id="qs-throttle" class="p-2">
+                                <div class="text-2xl">0%</div>
+                                <div class="text-xs text-gray-500">Throttle</div>
+                            </div>
+                            <div id="qs-brake" class="p-2">
+                                <div class="text-2xl text-gray-400">OFF</div>
+                                <div class="text-xs text-gray-500">Brake</div>
+                            </div>
+                            <div id="qs-speed" class="p-2">
+                                <div class="text-2xl">0</div>
+                                <div class="text-xs text-gray-500">km/h</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Data Panel -->
+                    <div class="space-y-3" id="live-data-panel">
+                        <!-- Throttle -->
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-medium">Throttle</span>
+                                <span id="ct-throttle-value" class="font-bold">0%</span>
+                            </div>
+                            <div class="w-full h-4 bg-gray-200 rounded-full overflow-hidden">
+                                <div id="ct-throttle-bar" class="h-full bg-blue-500 transition-all duration-100" style="width: 0%"></div>
+                            </div>
+                            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                <span id="ct-throttle-status">--</span>
+                                <span id="ct-throttle-expected">--</span>
+                            </div>
+                        </div>
+
+                        <!-- Brake -->
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <div class="flex justify-between items-center">
+                                <span class="font-medium">Brake</span>
+                                <span id="ct-brake-status" class="font-bold px-2 py-1 rounded bg-gray-200">RELEASED</span>
+                            </div>
+                            <div class="text-sm text-gray-500 mt-1" id="ct-brake-detail">--</div>
+                        </div>
+
+                        <!-- Speed / Wheel -->
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <div class="flex justify-between items-center">
+                                <span class="font-medium">Speed / Wheel</span>
+                                <span id="ct-speed-value" class="font-bold">0 km/h</span>
+                            </div>
+                            <div class="flex justify-between text-sm text-gray-500 mt-1">
+                                <span>RPM: <span id="ct-rpm-value">0</span></span>
+                                <span id="ct-wheel-status">Stopped</span>
+                            </div>
+                        </div>
+
+                        <!-- Battery -->
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-medium">Battery</span>
+                                <span id="ct-voltage-value" class="font-bold">0V</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span>Current: <span id="ct-current-value">0A</span></span>
+                                <span id="ct-battery-status" class="text-green-600">--</span>
+                            </div>
+                        </div>
+
+                        <!-- Controls -->
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="font-medium">Controls</span>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <span id="ct-mode-eco" class="px-2 py-1 rounded text-xs bg-gray-200">ECO</span>
+                                <span id="ct-mode-sport" class="px-2 py-1 rounded text-xs bg-gray-200">SPORT</span>
+                                <span id="ct-mode-turbo" class="px-2 py-1 rounded text-xs bg-gray-200">TURBO</span>
+                                <span class="text-gray-300">|</span>
+                                <span id="ct-headlight-status" class="px-2 py-1 rounded text-xs bg-gray-200">Light OFF</span>
+                                <span id="ct-cruise-status" class="px-2 py-1 rounded text-xs bg-gray-200">Cruise OFF</span>
+                            </div>
+                        </div>
+
+                        <!-- Diagnostics -->
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-medium">Diagnostics</span>
+                                <span id="ct-error-code" class="font-mono text-sm">0x00</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span>Temp: <span id="ct-temp-value">--C</span></span>
+                                <span>Packets/s: <span id="ct-packets-sec">0</span></span>
+                            </div>
+                            <div id="ct-error-message" class="text-xs text-green-600 mt-1">No errors</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Anomaly Alerts (shown when baseline comparison active) -->
+                <div id="ct-anomalies" class="mt-4 hidden">
+                    <h3 class="font-semibold mb-2">Anomalies Detected</h3>
+                    <div id="ct-anomaly-list" class="space-y-2"></div>
+                </div>
+
+                <!-- Learn Mode Panel (hidden by default) -->
+                <div id="learn-mode-panel" class="mt-4 hidden">
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                        <h3 class="font-semibold text-purple-800 mb-3">Learn Mode - Capture Baseline</h3>
+
+                        <!-- Progress -->
+                        <div class="mb-4">
+                            <div class="flex justify-between text-sm mb-1">
+                                <span>Progress</span>
+                                <span id="learn-progress-text">Step 0 of 8</span>
+                            </div>
+                            <div class="w-full h-2 bg-purple-200 rounded-full">
+                                <div id="learn-progress-bar" class="h-full bg-purple-600 rounded-full transition-all" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Current Step -->
+                        <div class="bg-white rounded-lg p-3 mb-3">
+                            <div class="flex items-start gap-3">
+                                <div id="learn-step-badge" class="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
+                                <div>
+                                    <h4 id="learn-step-title" class="font-bold">Power ON</h4>
+                                    <p id="learn-step-instruction" class="text-sm text-gray-600">Power on the scooter and wait...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Live Capture Stats -->
+                        <div class="grid grid-cols-3 gap-2 text-center text-sm mb-3">
+                            <div class="bg-white rounded p-2">
+                                <div class="font-bold" id="learn-throttle-samples">0</div>
+                                <div class="text-xs text-gray-500">Throttle</div>
+                            </div>
+                            <div class="bg-white rounded p-2">
+                                <div class="font-bold" id="learn-voltage-samples">0</div>
+                                <div class="text-xs text-gray-500">Voltage</div>
+                            </div>
+                            <div class="bg-white rounded p-2">
+                                <div class="font-bold" id="learn-modes-seen">0</div>
+                                <div class="text-xs text-gray-500">Modes</div>
+                            </div>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="flex gap-2">
+                            <button onclick="prevLearnStep()" id="btn-learn-prev" class="flex-1 py-2 bg-gray-200 text-gray-700 rounded font-medium" disabled>Previous</button>
+                            <button onclick="nextLearnStep()" id="btn-learn-next" class="flex-1 py-2 bg-purple-600 text-white rounded font-medium">Next Step</button>
+                        </div>
+                        <button onclick="finishLearnMode()" id="btn-learn-finish" class="w-full mt-2 py-2 bg-green-600 text-white rounded font-medium hidden">Save Baseline</button>
+                    </div>
+                </div>
+
+                <!-- Baseline Comparison Table (Test Mode) -->
+                <div id="baseline-comparison" class="mt-4 hidden">
+                    <h3 class="font-semibold mb-2">Baseline Comparison</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="p-2 text-left">Component</th>
+                                    <th class="p-2 text-left">Current</th>
+                                    <th class="p-2 text-left">Baseline</th>
+                                    <th class="p-2 text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="baseline-table-body">
+                                <tr><td colspan="4" class="p-4 text-center text-gray-500">Load a baseline to compare</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -909,6 +1232,509 @@
             } catch(e) { showToast('Health check failed', true); }
         }
 
+        // ========================================
+        // COMPONENT TEST FUNCTIONALITY
+        // ========================================
+
+        let componentTestWS = null;
+        let componentTestMode = 'test'; // 'learn' or 'test'
+        let learnSteps = [];
+        let currentLearnStep = 0;
+        let ctBaseline = null;
+        let wheelRotation = 0;
+
+        // Initialize Component Test model dropdown
+        async function initComponentTestModels() {
+            try {
+                const res = await fetch(API + '/api/models');
+                const data = await res.json();
+                const select = document.getElementById('ct-model-select');
+                select.innerHTML = '<option value="">-- Select model --</option>';
+                (data.models || []).forEach(m => {
+                    select.innerHTML += `<option value="${m.id}" data-protocol="${m.protocol}">${m.manufacturer} ${m.model_name}</option>`;
+                });
+            } catch(e) { console.error(e); }
+        }
+
+        // Set Component Test mode
+        function setComponentTestMode(mode) {
+            componentTestMode = mode;
+
+            // Update button states
+            document.getElementById('btn-learn-mode').classList.toggle('ring-2', mode === 'learn');
+            document.getElementById('btn-learn-mode').classList.toggle('ring-purple-300', mode === 'learn');
+            document.getElementById('btn-test-mode').classList.toggle('ring-2', mode === 'test');
+            document.getElementById('btn-test-mode').classList.toggle('ring-blue-300', mode === 'test');
+
+            // Show/hide panels
+            document.getElementById('learn-mode-panel').classList.toggle('hidden', mode !== 'learn');
+            document.getElementById('baseline-comparison').classList.toggle('hidden', mode !== 'test');
+
+            if (mode === 'learn') {
+                loadLearnSteps();
+            }
+        }
+
+        // Connect to Component Test WebSocket
+        async function connectComponentTest() {
+            const modelId = document.getElementById('ct-model-select').value;
+            if (!modelId) {
+                showToast('Select a scooter model first', true);
+                return;
+            }
+
+            // First start capture if not already running
+            if (!isCapturing) {
+                // Use simulation mode for testing
+                if (simulationMode) {
+                    await startSimulationCapture();
+                } else {
+                    const port = document.getElementById('port-select').value;
+                    const baud = document.getElementById('baud-select').value;
+                    if (!port) {
+                        showToast('Select a serial port first (or enable simulation mode)', true);
+                        return;
+                    }
+                    try {
+                        const res = await fetch(API + '/api/serial/start?port=' + encodeURIComponent(port) + '&baud_rate=' + baud, {method: 'POST'});
+                        if (!res.ok) {
+                            const data = await res.json();
+                            showToast(data.detail || 'Failed to start capture', true);
+                            return;
+                        }
+                        isCapturing = true;
+                    } catch(e) {
+                        showToast('Failed to start capture', true);
+                        return;
+                    }
+                }
+            }
+
+            // Connect WebSocket
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = wsProtocol + '//' + window.location.host + '/ws/component-test';
+
+            componentTestWS = new WebSocket(wsUrl);
+
+            componentTestWS.onopen = function() {
+                updateCTStatus('connected', 'Connected - Receiving data');
+                document.getElementById('btn-ct-connect').classList.add('hidden');
+                document.getElementById('btn-ct-disconnect').classList.remove('hidden');
+
+                // Load baseline if in test mode
+                if (componentTestMode === 'test') {
+                    componentTestWS.send(JSON.stringify({action: 'load_baseline', model_id: parseInt(modelId)}));
+                } else if (componentTestMode === 'learn') {
+                    componentTestWS.send(JSON.stringify({action: 'start_learn', model_id: parseInt(modelId)}));
+                }
+            };
+
+            componentTestWS.onmessage = function(event) {
+                const msg = JSON.parse(event.data);
+                handleComponentTestMessage(msg);
+            };
+
+            componentTestWS.onclose = function() {
+                updateCTStatus('disconnected', 'Disconnected');
+                document.getElementById('btn-ct-connect').classList.remove('hidden');
+                document.getElementById('btn-ct-disconnect').classList.add('hidden');
+            };
+
+            componentTestWS.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateCTStatus('error', 'Connection error');
+            };
+        }
+
+        // Disconnect Component Test
+        async function disconnectComponentTest() {
+            if (componentTestWS) {
+                if (componentTestMode === 'learn') {
+                    componentTestWS.send(JSON.stringify({action: 'stop_learn'}));
+                }
+                componentTestWS.close();
+                componentTestWS = null;
+            }
+
+            // Stop capture
+            if (isCapturing) {
+                await stopCapture();
+            }
+
+            updateCTStatus('disconnected', 'Disconnected');
+            document.getElementById('btn-ct-connect').classList.remove('hidden');
+            document.getElementById('btn-ct-disconnect').classList.add('hidden');
+        }
+
+        // Update Component Test status
+        function updateCTStatus(status, text) {
+            const dot = document.getElementById('ct-status-dot');
+            const textEl = document.getElementById('ct-status-text');
+
+            textEl.textContent = text;
+            dot.className = 'inline-block w-3 h-3 rounded-full mr-2 ';
+
+            if (status === 'connected') {
+                dot.classList.add('bg-green-500', 'pulse');
+            } else if (status === 'error') {
+                dot.classList.add('bg-red-500');
+            } else {
+                dot.classList.add('bg-gray-400');
+            }
+        }
+
+        // Handle Component Test WebSocket messages
+        function handleComponentTestMessage(msg) {
+            if (msg.type === 'component_data') {
+                if (msg.data) {
+                    updateComponentDisplay(msg.data);
+                    updateScooterDiagram(msg.data);
+
+                    if (msg.data.baseline_comparison) {
+                        updateBaselineComparison(msg.data, msg.data.baseline_comparison);
+                    }
+
+                    // Update learn mode stats
+                    if (msg.data.learn_mode) {
+                        updateLearnModeStats(msg.data);
+                    }
+                }
+            } else if (msg.type === 'baseline_loaded') {
+                if (msg.has_baseline) {
+                    showToast('Baseline loaded for comparison');
+                    document.getElementById('baseline-comparison').classList.remove('hidden');
+                    loadBaselineData(msg.model_id);
+                } else {
+                    showToast('No baseline found for this model', true);
+                }
+            } else if (msg.type === 'learn_started') {
+                showToast('Learn mode started');
+            } else if (msg.type === 'learn_stopped') {
+                showToast('Learn mode stopped');
+            }
+        }
+
+        // Update component data display
+        function updateComponentDisplay(data) {
+            // Throttle
+            const throttle = data.throttle_percent || 0;
+            document.getElementById('ct-throttle-value').textContent = throttle.toFixed(0) + '%';
+            document.getElementById('ct-throttle-bar').style.width = throttle + '%';
+            document.getElementById('qs-throttle').querySelector('.text-2xl').textContent = throttle.toFixed(0) + '%';
+
+            // Brake
+            const brakeEngaged = data.brake_engaged;
+            const brakeStatus = document.getElementById('ct-brake-status');
+            brakeStatus.textContent = brakeEngaged ? 'ENGAGED' : 'RELEASED';
+            brakeStatus.className = 'font-bold px-2 py-1 rounded ' + (brakeEngaged ? 'bg-red-500 text-white' : 'bg-gray-200');
+            document.getElementById('ct-brake-detail').textContent = `Brake: ${(data.brake_percent || 0).toFixed(0)}%`;
+            document.getElementById('qs-brake').querySelector('.text-2xl').textContent = brakeEngaged ? 'ON' : 'OFF';
+            document.getElementById('qs-brake').querySelector('.text-2xl').className = 'text-2xl ' + (brakeEngaged ? 'text-red-500' : 'text-gray-400');
+
+            // Speed
+            const speed = data.speed_kmh || 0;
+            document.getElementById('ct-speed-value').textContent = speed.toFixed(1) + ' km/h';
+            document.getElementById('ct-rpm-value').textContent = data.rpm || 0;
+            document.getElementById('ct-wheel-status').textContent = speed > 0 ? 'Spinning' : 'Stopped';
+            document.getElementById('qs-speed').querySelector('.text-2xl').textContent = speed.toFixed(0);
+
+            // Battery
+            const voltage = data.voltage || 0;
+            const current = data.current || 0;
+            document.getElementById('ct-voltage-value').textContent = voltage.toFixed(1) + 'V';
+            document.getElementById('ct-current-value').textContent = current.toFixed(1) + 'A';
+
+            // Estimate battery percentage (simplified: 48V system, 42V empty, 54V full)
+            const batteryPercent = Math.max(0, Math.min(100, ((voltage - 42) / (54 - 42)) * 100));
+            let batteryStatus = '';
+            if (batteryPercent > 80) batteryStatus = 'Good';
+            else if (batteryPercent > 40) batteryStatus = 'OK';
+            else if (batteryPercent > 20) batteryStatus = 'Low';
+            else batteryStatus = 'Critical';
+            document.getElementById('ct-battery-status').textContent = batteryStatus;
+            document.getElementById('ct-battery-status').className = batteryPercent > 40 ? 'text-green-600' : batteryPercent > 20 ? 'text-yellow-600' : 'text-red-600';
+
+            // Mode
+            const mode = data.mode || 0;
+            document.getElementById('ct-mode-eco').className = 'px-2 py-1 rounded text-xs ' + (mode === 0 ? 'bg-green-500 text-white' : 'bg-gray-200');
+            document.getElementById('ct-mode-sport').className = 'px-2 py-1 rounded text-xs ' + (mode === 1 ? 'bg-yellow-500 text-white' : 'bg-gray-200');
+            document.getElementById('ct-mode-turbo').className = 'px-2 py-1 rounded text-xs ' + (mode === 2 ? 'bg-red-500 text-white' : 'bg-gray-200');
+
+            // Headlight & Cruise
+            document.getElementById('ct-headlight-status').textContent = data.headlight ? 'Light ON' : 'Light OFF';
+            document.getElementById('ct-headlight-status').className = 'px-2 py-1 rounded text-xs ' + (data.headlight ? 'bg-yellow-400' : 'bg-gray-200');
+            document.getElementById('ct-cruise-status').textContent = data.cruise ? 'Cruise ON' : 'Cruise OFF';
+            document.getElementById('ct-cruise-status').className = 'px-2 py-1 rounded text-xs ' + (data.cruise ? 'bg-blue-400 text-white' : 'bg-gray-200');
+
+            // Diagnostics
+            document.getElementById('ct-temp-value').textContent = (data.temperature || 0) + 'C';
+            document.getElementById('ct-error-code').textContent = '0x' + (data.error_code || 0).toString(16).padStart(2, '0').toUpperCase();
+            document.getElementById('ct-packets-sec').textContent = (data.packets_per_sec || 0).toFixed(0);
+
+            const errorMsg = document.getElementById('ct-error-message');
+            if (data.error_code && data.error_code !== 0) {
+                errorMsg.textContent = data.error_message || 'Error detected';
+                errorMsg.className = 'text-xs text-red-600 font-bold';
+            } else {
+                errorMsg.textContent = 'No errors';
+                errorMsg.className = 'text-xs text-green-600';
+            }
+        }
+
+        // Update scooter diagram animations
+        function updateScooterDiagram(data) {
+            // Wheels rotation
+            const rpm = data.rpm || 0;
+            const wheelRear = document.getElementById('wheel-rear');
+            const wheelFront = document.getElementById('wheel-front');
+
+            if (rpm > 0) {
+                const spinDuration = Math.max(0.1, 60 / rpm);
+                wheelRear.style.setProperty('--spin-duration', spinDuration + 's');
+                wheelFront.style.setProperty('--spin-duration', spinDuration + 's');
+                wheelRear.classList.add('wheel-spinning');
+                wheelFront.classList.add('wheel-spinning');
+            } else {
+                wheelRear.classList.remove('wheel-spinning');
+                wheelFront.classList.remove('wheel-spinning');
+            }
+
+            // Brake lever
+            const brakeLever = document.getElementById('brake-lever');
+            if (data.brake_engaged) {
+                brakeLever.classList.add('brake-active');
+            } else {
+                brakeLever.classList.remove('brake-active');
+            }
+
+            // Headlight
+            const headlight = document.getElementById('headlight');
+            if (data.headlight) {
+                headlight.classList.add('headlight-on');
+            } else {
+                headlight.classList.remove('headlight-on');
+            }
+
+            // Motor temperature
+            const motor = document.getElementById('motor');
+            if (data.temperature && data.temperature > 50) {
+                motor.classList.add('motor-hot');
+            } else {
+                motor.classList.remove('motor-hot');
+            }
+
+            // Controller pulse (when receiving data)
+            const controller = document.getElementById('controller-box');
+            controller.classList.add('controller-active');
+            setTimeout(() => controller.classList.remove('controller-active'), 300);
+
+            // Throttle grip highlight
+            const throttleGrip = document.getElementById('throttle-grip');
+            const throttle = data.throttle_percent || 0;
+            if (throttle > 50) {
+                throttleGrip.setAttribute('fill', '#3b82f6');
+            } else if (throttle > 10) {
+                throttleGrip.setAttribute('fill', '#60a5fa');
+            } else {
+                throttleGrip.setAttribute('fill', '#6b7280');
+            }
+
+            // Battery indicator
+            const batteryIndicator = document.getElementById('battery-indicator');
+            const voltage = data.voltage || 0;
+            const batteryPercent = Math.max(0, Math.min(100, ((voltage - 42) / (54 - 42)) * 100));
+            batteryIndicator.setAttribute('width', Math.max(5, batteryPercent * 0.6));
+            if (batteryPercent > 50) {
+                batteryIndicator.setAttribute('fill', '#22c55e');
+            } else if (batteryPercent > 20) {
+                batteryIndicator.setAttribute('fill', '#f59e0b');
+            } else {
+                batteryIndicator.setAttribute('fill', '#ef4444');
+            }
+        }
+
+        // Update baseline comparison display
+        function updateBaselineComparison(data, comparison) {
+            const tableBody = document.getElementById('baseline-table-body');
+            const anomalyList = document.getElementById('ct-anomaly-list');
+
+            // Build comparison table
+            let rows = '';
+            const statusIcons = {
+                'ok': '<span class="text-green-600">&#10004;</span>',
+                'warning': '<span class="text-yellow-600">&#9888;</span>',
+                'error': '<span class="text-red-600">&#10008;</span>'
+            };
+
+            // Voltage
+            if (ctBaseline && ctBaseline.idle_voltage) {
+                rows += `<tr>
+                    <td class="p-2">Voltage</td>
+                    <td class="p-2">${(data.voltage || 0).toFixed(1)}V</td>
+                    <td class="p-2">${ctBaseline.idle_voltage.min || '-'}-${ctBaseline.idle_voltage.max || '-'}V</td>
+                    <td class="p-2 text-center">${statusIcons[comparison.status?.voltage] || '-'}</td>
+                </tr>`;
+            }
+
+            // Temperature
+            if (ctBaseline && ctBaseline.temperature_normal) {
+                rows += `<tr>
+                    <td class="p-2">Temperature</td>
+                    <td class="p-2">${data.temperature || 0}C</td>
+                    <td class="p-2">${ctBaseline.temperature_normal.min || '-'}-${ctBaseline.temperature_normal.max || '-'}C</td>
+                    <td class="p-2 text-center">${statusIcons[comparison.status?.temperature] || '-'}</td>
+                </tr>`;
+            }
+
+            // Current
+            if (ctBaseline && ctBaseline.operating_current) {
+                rows += `<tr>
+                    <td class="p-2">Current</td>
+                    <td class="p-2">${(data.current || 0).toFixed(1)}A</td>
+                    <td class="p-2">0-${ctBaseline.operating_current.max || '-'}A</td>
+                    <td class="p-2 text-center">${statusIcons[comparison.status?.current] || '-'}</td>
+                </tr>`;
+            }
+
+            // Error code
+            rows += `<tr>
+                <td class="p-2">Error Code</td>
+                <td class="p-2">0x${(data.error_code || 0).toString(16).toUpperCase()}</td>
+                <td class="p-2">0x00</td>
+                <td class="p-2 text-center">${statusIcons[comparison.status?.error_code] || '-'}</td>
+            </tr>`;
+
+            tableBody.innerHTML = rows || '<tr><td colspan="4" class="p-4 text-center text-gray-500">No data</td></tr>';
+
+            // Show anomalies
+            if (comparison.anomalies && comparison.anomalies.length > 0) {
+                document.getElementById('ct-anomalies').classList.remove('hidden');
+                anomalyList.innerHTML = comparison.anomalies.map(a => {
+                    const color = a.severity === 'critical' ? 'red' : a.severity === 'high' ? 'orange' : 'yellow';
+                    return `<div class="p-2 rounded bg-${color}-50 border-l-4 border-${color}-500">
+                        <span class="text-xs font-bold uppercase text-${color}-700">${a.severity}</span>
+                        <span class="text-sm ml-2">${a.message}</span>
+                    </div>`;
+                }).join('');
+            } else {
+                document.getElementById('ct-anomalies').classList.add('hidden');
+            }
+        }
+
+        // Load baseline data for display
+        async function loadBaselineData(modelId) {
+            try {
+                const res = await fetch(API + '/api/component-test/baseline/' + modelId);
+                if (res.ok) {
+                    ctBaseline = await res.json();
+                }
+            } catch(e) {
+                console.error('Failed to load baseline:', e);
+            }
+        }
+
+        // Model selection handler
+        function onCTModelSelect() {
+            const modelId = document.getElementById('ct-model-select').value;
+            if (modelId && componentTestMode === 'test') {
+                loadBaselineData(modelId);
+            }
+        }
+
+        // ========================================
+        // LEARN MODE FUNCTIONALITY
+        // ========================================
+
+        async function loadLearnSteps() {
+            try {
+                const res = await fetch(API + '/api/component-test/learn-steps');
+                const data = await res.json();
+                learnSteps = data.steps || [];
+                currentLearnStep = 0;
+                displayLearnStep();
+            } catch(e) { console.error(e); }
+        }
+
+        function displayLearnStep() {
+            if (!learnSteps.length) return;
+
+            const step = learnSteps[currentLearnStep];
+            document.getElementById('learn-step-badge').textContent = step.step_number;
+            document.getElementById('learn-step-title').textContent = step.title;
+            document.getElementById('learn-step-instruction').textContent = step.instruction;
+
+            const progress = ((currentLearnStep + 1) / learnSteps.length) * 100;
+            document.getElementById('learn-progress-bar').style.width = progress + '%';
+            document.getElementById('learn-progress-text').textContent = `Step ${currentLearnStep + 1} of ${learnSteps.length}`;
+
+            document.getElementById('btn-learn-prev').disabled = currentLearnStep === 0;
+
+            // Show finish button on last step
+            const isLastStep = currentLearnStep === learnSteps.length - 1;
+            document.getElementById('btn-learn-next').classList.toggle('hidden', isLastStep);
+            document.getElementById('btn-learn-finish').classList.toggle('hidden', !isLastStep);
+        }
+
+        function nextLearnStep() {
+            if (currentLearnStep < learnSteps.length - 1) {
+                currentLearnStep++;
+                displayLearnStep();
+
+                // Notify WebSocket
+                if (componentTestWS && componentTestWS.readyState === WebSocket.OPEN) {
+                    componentTestWS.send(JSON.stringify({action: 'next_learn_step'}));
+                }
+            }
+        }
+
+        function prevLearnStep() {
+            if (currentLearnStep > 0) {
+                currentLearnStep--;
+                displayLearnStep();
+            }
+        }
+
+        function updateLearnModeStats(data) {
+            // Update live stats during learn mode
+            // These would be updated based on accumulated data from WebSocket
+            document.getElementById('learn-throttle-samples').textContent = data.throttle_percent > 0 ? '+' : '0';
+            document.getElementById('learn-voltage-samples').textContent = data.voltage > 0 ? '+' : '0';
+        }
+
+        async function finishLearnMode() {
+            const modelId = document.getElementById('ct-model-select').value;
+            if (!modelId) return;
+
+            // Stop learn mode and get baseline data
+            try {
+                const res = await fetch(API + '/api/component-test/stop-learn', {method: 'POST'});
+                const data = await res.json();
+
+                if (data.baseline_data) {
+                    // Ask user to confirm saving
+                    const notes = prompt('Add notes for this baseline (optional):');
+
+                    const saveRes = await fetch(API + '/api/component-test/save-baseline?model_id=' + modelId, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            ...data.baseline_data,
+                            notes: notes || 'Baseline captured via Learn Mode'
+                        })
+                    });
+
+                    if (saveRes.ok) {
+                        showToast('Baseline saved successfully!');
+                        setComponentTestMode('test');
+                    } else {
+                        showToast('Failed to save baseline', true);
+                    }
+                }
+            } catch(e) {
+                showToast('Error finishing learn mode', true);
+            }
+        }
+
         // Init
         document.addEventListener('DOMContentLoaded', function() {
             loadStats();
@@ -916,6 +1742,7 @@
             loadPorts();
             loadStatus();
             loadHistory();
+            initComponentTestModels();
         });
     </script>
 </body>

@@ -297,17 +297,17 @@ class JPParser:
         """Analyze throttle input vs speed response correlation."""
         throttle_values = []
         speed_values = []
-        
+
         for packet in self.packets:
             if packet.direction == "dash_to_controller":
                 throttle_values.append(packet.fields.get("throttle_percent", 0))
             elif packet.direction == "controller_to_dash":
                 speed_values.append(packet.fields.get("speed_kmh", 0))
-        
+
         # Simple analysis
         has_throttle_input = any(t > 5 for t in throttle_values)
         has_speed_response = any(s > 0 for s in speed_values)
-        
+
         return {
             "throttle_samples": len(throttle_values),
             "speed_samples": len(speed_values),
@@ -317,3 +317,125 @@ class JPParser:
             "has_speed_response": has_speed_response,
             "potential_issue": has_throttle_input and not has_speed_response
         }
+
+    def parse_to_components(self, data: bytes) -> Optional[Dict]:
+        """
+        Parse raw packet into component-friendly format for real-time display.
+
+        Returns a dictionary with all component states, or None if packet is invalid.
+        """
+        # Try to parse latest packets
+        packets = self.parse(data)
+        if not packets:
+            return None
+
+        # Get the most recent data from both directions
+        component_data = {
+            "timestamp": None,
+            "throttle_percent": 0,
+            "throttle_raw": 0,
+            "brake_engaged": False,
+            "brake_percent": 0,
+            "brake_raw": 0,
+            "speed_kmh": 0,
+            "voltage": 0,
+            "current": 0,
+            "temperature": 0,
+            "mode": 0,  # 0=Eco, 1=Sport, 2=Turbo
+            "mode_name": "eco",
+            "headlight": False,
+            "cruise": False,
+            "rpm": 0,
+            "error_code": 0,
+            "error_message": "No error",
+            "protocol": "jp_qs_s4",
+            "packet_valid": True
+        }
+
+        # Process packets to extract latest values
+        for packet in packets[-20:]:  # Look at last 20 packets for freshest data
+            if not packet.checksum_valid:
+                continue
+
+            if packet.direction == "dash_to_controller":
+                fields = packet.fields
+                component_data["throttle_percent"] = fields.get("throttle_percent", 0)
+                component_data["throttle_raw"] = fields.get("throttle_raw", 0)
+                component_data["brake_percent"] = fields.get("brake_percent", 0)
+                component_data["brake_raw"] = fields.get("brake_raw", 0)
+                component_data["brake_engaged"] = fields.get("brake_percent", 0) > 10
+                component_data["mode"] = fields.get("mode", 0)
+                component_data["mode_name"] = ["eco", "sport", "turbo"][min(fields.get("mode", 0), 2)]
+                component_data["headlight"] = fields.get("headlight", False)
+                component_data["cruise"] = fields.get("cruise_control", False)
+
+            elif packet.direction == "controller_to_dash":
+                fields = packet.fields
+                component_data["speed_kmh"] = fields.get("speed_kmh", 0)
+                component_data["voltage"] = fields.get("voltage", 0)
+                component_data["current"] = fields.get("current", 0)
+                component_data["temperature"] = fields.get("temperature", 0)
+                component_data["error_code"] = fields.get("error_code", 0)
+                component_data["error_message"] = fields.get("error_message", "No error")
+                # Estimate RPM from speed (typical e-scooter wheel ~8.5" diameter)
+                # RPM = (speed_kmh * 1000 / 60) / (wheel_circumference_m)
+                # For ~8.5" wheel: circumference ≈ 0.68m, so RPM ≈ speed * 24.5
+                component_data["rpm"] = int(component_data["speed_kmh"] * 24.5)
+
+        return component_data
+
+    def get_latest_components(self) -> Dict:
+        """Get component data from already-parsed packets (for use with existing session)."""
+        if not self.packets:
+            return None
+
+        component_data = {
+            "timestamp": None,
+            "throttle_percent": 0,
+            "throttle_raw": 0,
+            "brake_engaged": False,
+            "brake_percent": 0,
+            "brake_raw": 0,
+            "speed_kmh": 0,
+            "voltage": 0,
+            "current": 0,
+            "temperature": 0,
+            "mode": 0,
+            "mode_name": "eco",
+            "headlight": False,
+            "cruise": False,
+            "rpm": 0,
+            "error_code": 0,
+            "error_message": "No error",
+            "protocol": "jp_qs_s4",
+            "packet_valid": True
+        }
+
+        # Process last 20 packets for freshest data
+        for packet in self.packets[-20:]:
+            if not packet.checksum_valid:
+                continue
+
+            if packet.direction == "dash_to_controller":
+                fields = packet.fields
+                component_data["throttle_percent"] = fields.get("throttle_percent", 0)
+                component_data["throttle_raw"] = fields.get("throttle_raw", 0)
+                component_data["brake_percent"] = fields.get("brake_percent", 0)
+                component_data["brake_raw"] = fields.get("brake_raw", 0)
+                component_data["brake_engaged"] = fields.get("brake_percent", 0) > 10
+                component_data["mode"] = fields.get("mode", 0)
+                component_data["mode_name"] = ["eco", "sport", "turbo"][min(fields.get("mode", 0), 2)]
+                component_data["headlight"] = fields.get("headlight", False)
+                component_data["cruise"] = fields.get("cruise_control", False)
+
+            elif packet.direction == "controller_to_dash":
+                fields = packet.fields
+                component_data["speed_kmh"] = fields.get("speed_kmh", 0)
+                component_data["voltage"] = fields.get("voltage", 0)
+                component_data["current"] = fields.get("current", 0)
+                component_data["temperature"] = fields.get("temperature", 0)
+                component_data["error_code"] = fields.get("error_code", 0)
+                component_data["error_message"] = fields.get("error_message", "No error")
+                component_data["rpm"] = int(component_data["speed_kmh"] * 24.5)
+
+        return component_data
