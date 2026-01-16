@@ -1,0 +1,12 @@
+# ElectriFix Diagnostics - Requirements
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pyserial==3.5
+anthropic==0.18.1
+python-multipart==0.0.6
+aiofiles==23.2.1
+websockets==12.0
+pydantic==2.5.3
+python-dotenv==1.0.0
+jinja2==3.1.3
+httpx==0.26.0

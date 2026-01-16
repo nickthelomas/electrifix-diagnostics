@@ -1,0 +1,38 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Environment variables (contains API key)
+.env
+
+# Database (may contain customer data)
+data/*.db
+data/*.db-journal
+
+# Capture files (may contain customer data)
+data/captures/*.bin
+data/baselines/*.bin
+
+# Logs
+*.log
+/tmp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
