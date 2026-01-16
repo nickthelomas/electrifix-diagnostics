@@ -226,6 +226,7 @@ class SerialCapture:
     def _capture_loop(self):
         """Background capture loop."""
         start_ms = int(time.time() * 1000)
+        error_occurred = False
 
         while self.is_capturing and self.serial_port and self.serial_port.is_open:
             try:
@@ -258,7 +259,28 @@ class SerialCapture:
 
             except serial.SerialException as e:
                 print(f"Serial error during capture: {e}")
+                error_occurred = True
                 break
+            except OSError as e:
+                print(f"OS error during capture (port disconnected?): {e}")
+                error_occurred = True
+                break
+
+        # Cleanup on exit (whether normal or due to error)
+        self.is_capturing = False
+        if error_occurred:
+            # Finalize the session even on error so data isn't lost
+            with self._lock:
+                if self.current_session:
+                    self.current_session.end_time = datetime.now()
+                    self.last_session = self.current_session
+            # Clean up serial port
+            try:
+                if self.serial_port and self.serial_port.is_open:
+                    self.serial_port.close()
+            except Exception:
+                pass
+            self.serial_port = None
     
     def stop_capture(self) -> Optional[CaptureSession]:
         """Stop capturing and return session data."""

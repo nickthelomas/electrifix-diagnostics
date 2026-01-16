@@ -364,8 +364,8 @@ def complete_diagnosis(diagnosis_id: int, outcome_data: Dict):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        UPDATE fault_diagnoses 
-        SET actual_fault = ?, fix_applied = ?, parts_cost = ?, 
+        UPDATE fault_diagnoses
+        SET actual_fault = ?, fix_applied = ?, parts_cost = ?,
             labour_minutes = ?, diagnosis_correct = ?, notes = ?,
             status = 'completed', completed_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -379,7 +379,92 @@ def complete_diagnosis(diagnosis_id: int, outcome_data: Dict):
         diagnosis_id
     ))
     conn.commit()
+
+    # Update learning patterns for future diagnosis improvement
+    _update_learning_patterns(cursor, diagnosis_id, outcome_data)
+
+    conn.commit()
     conn.close()
+
+
+def _update_learning_patterns(cursor, diagnosis_id: int, outcome_data: Dict):
+    """Update learning patterns table with completed diagnosis outcomes."""
+    try:
+        # Get the diagnosis details
+        cursor.execute('''
+            SELECT model_id, raw_anomalies, actual_fault, fix_applied,
+                   parts_cost, labour_minutes, diagnosis_correct
+            FROM fault_diagnoses WHERE id = ?
+        ''', (diagnosis_id,))
+        row = cursor.fetchone()
+        if not row:
+            return
+
+        model_id = row["model_id"]
+        raw_anomalies = row["raw_anomalies"]
+        actual_fault = outcome_data.get("actual_fault") or row["actual_fault"]
+        fix_applied = outcome_data.get("fix_applied") or row["fix_applied"]
+        parts_cost = outcome_data.get("parts_cost") or row["parts_cost"]
+        labour_minutes = outcome_data.get("labour_minutes") or row["labour_minutes"]
+        is_correct = 1 if outcome_data.get("diagnosis_correct") else 0
+
+        # Create a pattern key from the anomalies
+        if isinstance(raw_anomalies, str):
+            anomalies_list = json.loads(raw_anomalies)
+        else:
+            anomalies_list = raw_anomalies or []
+
+        # Create a normalized pattern string (sorted anomalies)
+        pattern = "|".join(sorted(set(str(a)[:50] for a in anomalies_list[:5]))) if anomalies_list else "no_anomalies"
+
+        # Check if pattern already exists
+        cursor.execute('''
+            SELECT id, occurrence_count, correct_diagnoses, common_fixes,
+                   average_parts_cost, average_labour_minutes
+            FROM learning_patterns
+            WHERE model_id = ? AND anomaly_pattern = ?
+        ''', (model_id, pattern))
+        existing = cursor.fetchone()
+
+        if existing:
+            # Update existing pattern
+            new_count = existing["occurrence_count"] + 1
+            new_correct = existing["correct_diagnoses"] + is_correct
+
+            # Update average costs
+            old_avg_cost = existing["average_parts_cost"] or 0
+            new_avg_cost = ((old_avg_cost * existing["occurrence_count"]) + (parts_cost or 0)) / new_count
+
+            old_avg_labour = existing["average_labour_minutes"] or 0
+            new_avg_labour = int(((old_avg_labour * existing["occurrence_count"]) + (labour_minutes or 0)) / new_count)
+
+            # Update common fixes
+            common_fixes = json.loads(existing["common_fixes"]) if existing["common_fixes"] else []
+            if fix_applied and fix_applied not in common_fixes:
+                common_fixes.append(fix_applied)
+                common_fixes = common_fixes[-10:]  # Keep last 10
+
+            cursor.execute('''
+                UPDATE learning_patterns
+                SET occurrence_count = ?, correct_diagnoses = ?, common_fixes = ?,
+                    average_parts_cost = ?, average_labour_minutes = ?,
+                    fault_category = ?, last_seen = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (new_count, new_correct, json.dumps(common_fixes),
+                  new_avg_cost, new_avg_labour, actual_fault, existing["id"]))
+        else:
+            # Insert new pattern
+            cursor.execute('''
+                INSERT INTO learning_patterns
+                (model_id, anomaly_pattern, fault_category, occurrence_count,
+                 correct_diagnoses, common_fixes, average_parts_cost, average_labour_minutes)
+                VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+            ''', (model_id, pattern, actual_fault, is_correct,
+                  json.dumps([fix_applied] if fix_applied else []),
+                  parts_cost or 0, labour_minutes or 0))
+
+    except Exception as e:
+        print(f"Warning: Failed to update learning patterns: {e}")
 
 
 def get_diagnosis_history(limit: int = 50, model_id: Optional[int] = None) -> List[Dict]:
