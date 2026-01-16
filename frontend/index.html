@@ -342,61 +342,29 @@
                     <!-- Scooter Diagram -->
                     <div class="bg-gray-50 rounded-lg p-4" id="scooter-diagram-container">
                         <h3 class="font-semibold mb-3 text-center">Scooter Diagram</h3>
-                        <div class="relative w-full max-w-xs mx-auto">
-                            <!-- SVG Scooter Diagram -->
-                            <svg viewBox="0 0 200 200" class="w-full h-auto" id="scooter-svg">
-                                <!-- Background -->
-                                <rect x="0" y="0" width="200" height="200" fill="#f9fafb"/>
+                        <div class="relative w-full max-w-md mx-auto">
+                            <!-- User's Scooter Diagram Image -->
+                            <img src="/static/images/scooter-diagram.png"
+                                 alt="Scooter Diagram"
+                                 class="w-full h-auto"
+                                 id="scooter-diagram-img"
+                                 style="max-height: 500px; object-fit: contain;"/>
 
-                                <!-- Rear Wheel -->
-                                <g id="wheel-rear" transform="translate(50, 160)">
-                                    <circle cx="0" cy="0" r="25" fill="none" stroke="#374151" stroke-width="4"/>
-                                    <circle cx="0" cy="0" r="18" fill="none" stroke="#9ca3af" stroke-width="2"/>
-                                    <line x1="-15" y1="0" x2="15" y2="0" stroke="#9ca3af" stroke-width="2"/>
-                                    <line x1="0" y1="-15" x2="0" y2="15" stroke="#9ca3af" stroke-width="2"/>
+                            <!-- Animated Overlays (SVG for highlights/animations) -->
+                            <svg viewBox="0 0 100 100" class="absolute inset-0 w-full h-full pointer-events-none" id="scooter-svg" preserveAspectRatio="xMidYMid meet">
+                                <!-- Wheel rotation overlays (adjust positioning based on your image) -->
+                                <g id="wheel-rear" opacity="0.7">
+                                    <circle cx="25" cy="80" r="8" fill="none" stroke="#00ff00" stroke-width="2" stroke-dasharray="2,2"/>
+                                </g>
+                                <g id="wheel-front" opacity="0.7">
+                                    <circle cx="75" cy="80" r="8" fill="none" stroke="#00ff00" stroke-width="2" stroke-dasharray="2,2"/>
                                 </g>
 
-                                <!-- Front Wheel -->
-                                <g id="wheel-front" transform="translate(150, 160)">
-                                    <circle cx="0" cy="0" r="25" fill="none" stroke="#374151" stroke-width="4"/>
-                                    <circle cx="0" cy="0" r="18" fill="none" stroke="#9ca3af" stroke-width="2"/>
-                                    <line x1="-15" y1="0" x2="15" y2="0" stroke="#9ca3af" stroke-width="2"/>
-                                    <line x1="0" y1="-15" x2="0" y2="15" stroke="#9ca3af" stroke-width="2"/>
-                                </g>
-
-                                <!-- Deck -->
-                                <rect id="deck" x="40" y="125" width="120" height="20" rx="5" fill="#1e40af"/>
-
-                                <!-- Battery (inside deck) -->
-                                <rect id="battery-indicator" x="50" y="130" width="60" height="10" rx="2" fill="#22c55e"/>
-
-                                <!-- Stem -->
-                                <line x1="150" y1="125" x2="160" y2="50" stroke="#374151" stroke-width="6" stroke-linecap="round"/>
-
-                                <!-- Handlebar -->
-                                <line x1="140" y1="50" x2="180" y2="50" stroke="#374151" stroke-width="4" stroke-linecap="round"/>
-
-                                <!-- Throttle Grip -->
-                                <rect id="throttle-grip" x="170" y="43" width="15" height="14" rx="3" fill="#6b7280"/>
-
-                                <!-- Brake Lever -->
-                                <g id="brake-lever" transform="translate(135, 45)">
-                                    <rect x="0" y="0" width="8" height="3" fill="#6b7280"/>
-                                    <rect id="brake-lever-arm" x="-5" y="0" width="10" height="3" rx="1" fill="#9ca3af"/>
-                                </g>
-
-                                <!-- Display/Dashboard -->
-                                <rect id="dashboard-display" x="150" y="55" width="15" height="12" rx="2" fill="#1f2937"/>
-                                <rect x="152" y="57" width="11" height="8" rx="1" fill="#10b981" id="display-screen"/>
-
-                                <!-- Headlight -->
-                                <circle id="headlight" cx="165" cy="40" r="5" fill="#fbbf24" opacity="0.3"/>
-
-                                <!-- Motor (rear hub) -->
-                                <circle id="motor" cx="50" cy="160" r="12" fill="#4b5563"/>
-
-                                <!-- Controller Box -->
-                                <rect id="controller-box" x="70" y="100" width="25" height="15" rx="2" fill="#374151"/>
+                                <!-- Component highlights (adjust positioning to match your image) -->
+                                <circle id="throttle-highlight" cx="85" cy="25" r="5" fill="#00ff00" opacity="0"/>
+                                <circle id="brake-highlight" cx="65" cy="25" r="5" fill="#ff0000" opacity="0"/>
+                                <circle id="headlight-highlight" cx="80" cy="20" r="4" fill="#ffff00" opacity="0"/>
+                                <circle id="motor-highlight" cx="25" cy="80" r="10" fill="#ff6600" opacity="0"/>
                             </svg>
 
                             <!-- Component Labels (overlays) -->
