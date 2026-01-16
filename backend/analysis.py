@@ -82,7 +82,9 @@ class DiagnosticAnalyzer:
         self._check_communication_health(stats)
         self._check_error_codes(stats)
         self._check_data_quality(stats)
-        
+        self._check_voltage_anomalies(stats)
+        self._check_throttle_anomalies(stats)
+
         # Compare against baseline if available
         if self.baseline_data:
             self._compare_to_baseline(packets, stats)
@@ -217,7 +219,7 @@ class DiagnosticAnalyzer:
         """Check overall data quality."""
         if self.protocol == "unknown":
             quality = stats.get("quality_assessment", "")
-            
+
             if quality == "likely_noise":
                 self.anomalies.append(Anomaly(
                     anomaly_type="signal_noise",
@@ -230,7 +232,47 @@ class DiagnosticAnalyzer:
                     severity="high",
                     description="Not enough data captured - ensure scooter is powered on"
                 ))
-    
+
+    def _check_voltage_anomalies(self, stats: Dict):
+        """Check for voltage-related anomalies."""
+        voltage_min = stats.get("voltage_min")
+        voltage_max = stats.get("voltage_max")
+
+        if voltage_max is not None and voltage_max > 70:
+            self.anomalies.append(Anomaly(
+                anomaly_type="overvoltage",
+                severity="critical",
+                description=f"Overvoltage detected: {voltage_max}V - battery or charger issue, risk of damage"
+            ))
+        elif voltage_max is not None and voltage_max > 62:
+            self.anomalies.append(Anomaly(
+                anomaly_type="high_voltage_warning",
+                severity="high",
+                description=f"High voltage detected: {voltage_max}V - check battery/charger"
+            ))
+
+        if voltage_min is not None and voltage_min < 35 and voltage_min > 0:
+            self.anomalies.append(Anomaly(
+                anomaly_type="undervoltage",
+                severity="high",
+                description=f"Undervoltage detected: {voltage_min}V - battery low or BMS issue"
+            ))
+        elif voltage_min is not None and voltage_min < 40 and voltage_min > 0:
+            self.anomalies.append(Anomaly(
+                anomaly_type="low_voltage_warning",
+                severity="medium",
+                description=f"Low voltage detected: {voltage_min}V - battery may need charging"
+            ))
+
+    def _check_throttle_anomalies(self, stats: Dict):
+        """Check for throttle-related anomalies."""
+        if stats.get("throttle_stuck"):
+            self.anomalies.append(Anomaly(
+                anomaly_type="stuck_throttle",
+                severity="critical",
+                description="Throttle appears stuck at high value - SAFETY HAZARD, check throttle sensor/wiring"
+            ))
+
     def _compare_to_baseline(self, packets: List, stats: Dict):
         """Compare capture to stored baseline."""
         if not self.baseline_data:

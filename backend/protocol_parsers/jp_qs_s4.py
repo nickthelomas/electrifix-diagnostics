@@ -227,14 +227,19 @@ class JPParser:
     def _update_stats(self, packet: JPPacket):
         """Update statistics with parsed packet."""
         self.stats["total_packets"] += 1
-        
+
         if packet.checksum_valid:
             self.stats["valid_checksums"] += 1
         else:
             self.stats["invalid_checksums"] += 1
-        
+
         if packet.direction == "dash_to_controller":
             self.stats["dash_to_ctrl"] += 1
+            # Track throttle values for stuck throttle detection
+            throttle = packet.fields.get("throttle_raw", 0)
+            if "throttle_values" not in self.stats:
+                self.stats["throttle_values"] = []
+            self.stats["throttle_values"].append(throttle)
         elif packet.direction == "controller_to_dash":
             self.stats["ctrl_to_dash"] += 1
             # Track error codes
@@ -243,6 +248,13 @@ class JPParser:
                 if error != 0:
                     key = f"0x{error:02X}"
                     self.stats["error_codes_seen"][key] = self.stats["error_codes_seen"].get(key, 0) + 1
+            # Track voltage for overvoltage/undervoltage detection
+            voltage = packet.fields.get("voltage", 0)
+            if voltage > 0:
+                if "voltage_min" not in self.stats or voltage < self.stats["voltage_min"]:
+                    self.stats["voltage_min"] = voltage
+                if "voltage_max" not in self.stats or voltage > self.stats["voltage_max"]:
+                    self.stats["voltage_max"] = voltage
         else:
             self.stats["unknown_direction"] += 1
     
@@ -251,7 +263,22 @@ class JPParser:
         checksum_error_rate = 0
         if self.stats["total_packets"] > 0:
             checksum_error_rate = (self.stats["invalid_checksums"] / self.stats["total_packets"]) * 100
-        
+
+        # Analyze throttle for stuck detection
+        throttle_stuck = False
+        throttle_values = self.stats.get("throttle_values", [])
+        if len(throttle_values) > 10:
+            # Check if throttle is stuck at a non-zero value
+            # (very low variance + moderately high value = stuck)
+            non_zero = [t for t in throttle_values if t > 50]  # Filter out idle
+            if len(non_zero) > len(throttle_values) * 0.8:
+                # Check variance - stuck throttle has very low variance
+                avg = sum(non_zero) / len(non_zero)
+                variance = sum((t - avg) ** 2 for t in non_zero) / len(non_zero)
+                # If variance is very low and average is moderately high, it's stuck
+                if variance < 100 and avg > 80:
+                    throttle_stuck = True
+
         return {
             "protocol": "jp_qs_s4",
             "total_packets": self.stats["total_packets"],
@@ -260,6 +287,9 @@ class JPParser:
             "controller_to_dash_packets": self.stats["ctrl_to_dash"],
             "unknown_direction_packets": self.stats["unknown_direction"],
             "error_codes_seen": self.stats["error_codes_seen"],
+            "voltage_min": self.stats.get("voltage_min"),
+            "voltage_max": self.stats.get("voltage_max"),
+            "throttle_stuck": throttle_stuck,
             "parse_errors": len(self.errors)
         }
     

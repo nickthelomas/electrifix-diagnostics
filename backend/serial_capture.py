@@ -111,8 +111,18 @@ class ScooterSimulator:
         self.state["packet_count"] += 1
 
         # Apply fault injection
+        # Persistent faults always apply, probabilistic faults use fault_probability
         if self.config.fault != SimulationFault.NONE:
-            if random.random() < self.config.fault_probability:
+            persistent_faults = [
+                SimulationFault.OVERVOLTAGE,
+                SimulationFault.UNDERVOLTAGE,
+                SimulationFault.MOTOR_ERROR,
+                SimulationFault.STUCK_THROTTLE,
+                SimulationFault.NO_RESPONSE,
+            ]
+            if self.config.fault in persistent_faults:
+                return self._generate_faulty_packet()
+            elif random.random() < self.config.fault_probability:
                 return self._generate_faulty_packet()
 
         # Simulate throttle response
