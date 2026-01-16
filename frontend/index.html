@@ -315,6 +315,15 @@
             <div class="bg-white rounded-lg shadow p-4">
                 <h2 class="text-lg font-bold mb-4">Component Test - Live Diagnostics</h2>
 
+                <!-- Simulation Mode Toggle -->
+                <div id="ct-simulation-box" class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="ct-simulation-mode" class="mr-3 h-5 w-5" onchange="toggleComponentTestSimulation()">
+                        <span class="font-medium">Use Simulation (Test Overlays)</span>
+                    </label>
+                    <p class="text-sm text-yellow-700 mt-1">Test overlay positioning and animations without hardware</p>
+                </div>
+
                 <!-- Mode Selection & Status -->
                 <div class="flex flex-wrap gap-2 mb-4">
                     <button onclick="setComponentTestMode('learn')" id="btn-learn-mode" class="px-4 py-2 bg-purple-600 text-white rounded font-medium">Learn Mode</button>
@@ -329,13 +338,16 @@
                     <span id="ct-status-text">Not connected</span>
                 </div>
 
-                <!-- Model Selection -->
-                <div class="mb-4">
+                <!-- Model Selection (hidden in simulation mode when testing overlays) -->
+                <div id="ct-model-selection" class="mb-4">
                     <label class="block text-sm font-medium mb-1">Scooter Model</label>
                     <select id="ct-model-select" class="w-full p-3 border rounded-lg" onchange="onCTModelSelect()">
                         <option value="">-- Select model --</option>
                     </select>
                 </div>
+
+                <!-- Test Mode: Empty state when no baselines -->
+                <div id="ct-test-empty-state" class="hidden mb-4"></div>
 
                 <!-- Main Layout: Scooter Diagram + Live Data -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -485,50 +497,103 @@
                     <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
                         <h3 class="font-semibold text-purple-800 mb-3">Learn Mode - Capture Baseline</h3>
 
-                        <!-- Progress -->
-                        <div class="mb-4">
-                            <div class="flex justify-between text-sm mb-1">
-                                <span>Progress</span>
-                                <span id="learn-progress-text">Step 0 of 8</span>
-                            </div>
-                            <div class="w-full h-2 bg-purple-200 rounded-full">
-                                <div id="learn-progress-bar" class="h-full bg-purple-600 rounded-full transition-all" style="width: 0%"></div>
-                            </div>
-                        </div>
+                        <!-- Learn Step 1: Model Selection -->
+                        <div id="learn-step-1-model" class="space-y-4">
+                            <p class="text-gray-600">Which scooter model are you capturing a baseline from?</p>
 
-                        <!-- Current Step -->
-                        <div class="bg-white rounded-lg p-3 mb-3">
-                            <div class="flex items-start gap-3">
-                                <div id="learn-step-badge" class="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
-                                <div>
-                                    <h4 id="learn-step-title" class="font-bold">Power ON</h4>
-                                    <p id="learn-step-instruction" class="text-sm text-gray-600">Power on the scooter and wait...</p>
+                            <div>
+                                <label class="block text-sm font-medium mb-2">Select Existing Model</label>
+                                <select id="learn-model-select" class="w-full p-3 border rounded-lg">
+                                    <option value="">-- Select a model --</option>
+                                </select>
+                            </div>
+
+                            <div class="text-center my-3 text-gray-500">- OR -</div>
+
+                            <div>
+                                <label class="block text-sm font-medium mb-2">Create New Model</label>
+                                <input type="text"
+                                       id="learn-new-model-name"
+                                       placeholder="e.g., Dragon GTR V3, Custom Build"
+                                       class="w-full p-3 border rounded-lg mb-2">
+
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="block text-xs text-gray-600 mb-1">Protocol</label>
+                                        <select id="learn-new-protocol" class="w-full p-2 border rounded" onchange="updateLearnBaudRate()">
+                                            <option value="jp_qs_s4">JP/QS-S4 (1200)</option>
+                                            <option value="ninebot">Ninebot (115200)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-600 mb-1">Baud Rate</label>
+                                        <input type="number"
+                                               id="learn-new-baud"
+                                               value="1200"
+                                               class="w-full p-2 border rounded">
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <!-- Live Capture Stats -->
-                        <div class="grid grid-cols-3 gap-2 text-center text-sm mb-3">
-                            <div class="bg-white rounded p-2">
-                                <div class="font-bold" id="learn-throttle-samples">0</div>
-                                <div class="text-xs text-gray-500">Throttle</div>
-                            </div>
-                            <div class="bg-white rounded p-2">
-                                <div class="font-bold" id="learn-voltage-samples">0</div>
-                                <div class="text-xs text-gray-500">Voltage</div>
-                            </div>
-                            <div class="bg-white rounded p-2">
-                                <div class="font-bold" id="learn-modes-seen">0</div>
-                                <div class="text-xs text-gray-500">Modes</div>
+                            <div class="flex gap-2 mt-4">
+                                <button onclick="cancelLearnMode()"
+                                        class="flex-1 py-3 bg-gray-300 text-gray-700 rounded-lg font-medium">
+                                    Cancel
+                                </button>
+                                <button onclick="startLearnWithModel()"
+                                        class="flex-1 py-3 bg-purple-600 text-white rounded-lg font-bold">
+                                    Start Learning
+                                </button>
                             </div>
                         </div>
 
-                        <!-- Actions -->
-                        <div class="flex gap-2">
-                            <button onclick="prevLearnStep()" id="btn-learn-prev" class="flex-1 py-2 bg-gray-200 text-gray-700 rounded font-medium" disabled>Previous</button>
-                            <button onclick="nextLearnStep()" id="btn-learn-next" class="flex-1 py-2 bg-purple-600 text-white rounded font-medium">Next Step</button>
+                        <!-- Learn Step 2+: Guided Sequence (hidden initially) -->
+                        <div id="learn-step-sequence" class="hidden">
+                            <!-- Progress -->
+                            <div class="mb-4">
+                                <div class="flex justify-between text-sm mb-1">
+                                    <span>Progress</span>
+                                    <span id="learn-progress-text">Step 0 of 8</span>
+                                </div>
+                                <div class="w-full h-2 bg-purple-200 rounded-full">
+                                    <div id="learn-progress-bar" class="h-full bg-purple-600 rounded-full transition-all" style="width: 0%"></div>
+                                </div>
+                            </div>
+
+                            <!-- Current Step -->
+                            <div class="bg-white rounded-lg p-3 mb-3">
+                                <div class="flex items-start gap-3">
+                                    <div id="learn-step-badge" class="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
+                                    <div>
+                                        <h4 id="learn-step-title" class="font-bold">Power ON</h4>
+                                        <p id="learn-step-instruction" class="text-sm text-gray-600">Power on the scooter and wait...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Live Capture Stats -->
+                            <div class="grid grid-cols-3 gap-2 text-center text-sm mb-3">
+                                <div class="bg-white rounded p-2">
+                                    <div class="font-bold" id="learn-throttle-samples">0</div>
+                                    <div class="text-xs text-gray-500">Throttle</div>
+                                </div>
+                                <div class="bg-white rounded p-2">
+                                    <div class="font-bold" id="learn-voltage-samples">0</div>
+                                    <div class="text-xs text-gray-500">Voltage</div>
+                                </div>
+                                <div class="bg-white rounded p-2">
+                                    <div class="font-bold" id="learn-modes-seen">0</div>
+                                    <div class="text-xs text-gray-500">Modes</div>
+                                </div>
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="flex gap-2">
+                                <button onclick="prevLearnStep()" id="btn-learn-prev" class="flex-1 py-2 bg-gray-200 text-gray-700 rounded font-medium" disabled>Previous</button>
+                                <button onclick="nextLearnStep()" id="btn-learn-next" class="flex-1 py-2 bg-purple-600 text-white rounded font-medium">Next Step</button>
+                            </div>
+                            <button onclick="finishLearnMode()" id="btn-learn-finish" class="w-full mt-2 py-2 bg-green-600 text-white rounded font-medium hidden">Save Baseline</button>
                         </div>
-                        <button onclick="finishLearnMode()" id="btn-learn-finish" class="w-full mt-2 py-2 bg-green-600 text-white rounded font-medium hidden">Save Baseline</button>
                     </div>
                 </div>
 
@@ -1210,6 +1275,75 @@
         let currentLearnStep = 0;
         let ctBaseline = null;
         let wheelRotation = 0;
+        let ctSimulationMode = false;
+        let ctSimulationInterval = null;
+        let currentLearnModelId = null;
+
+        // Simulation Mode for Component Test
+        function toggleComponentTestSimulation() {
+            ctSimulationMode = document.getElementById('ct-simulation-mode').checked;
+
+            if (ctSimulationMode) {
+                // In simulation mode, model selection is optional (for overlay testing)
+                showToast('Simulation mode enabled - generating fake component data');
+            } else {
+                // Stop simulation if running
+                if (ctSimulationInterval) {
+                    clearInterval(ctSimulationInterval);
+                    ctSimulationInterval = null;
+                }
+                showToast('Simulation mode disabled');
+            }
+        }
+
+        function startComponentTestSimulation() {
+            if (!ctSimulationMode) return;
+
+            let time = 0;
+            updateCTStatus('connected', 'Simulation Running');
+            document.getElementById('btn-ct-connect').classList.add('hidden');
+            document.getElementById('btn-ct-disconnect').classList.remove('hidden');
+
+            ctSimulationInterval = setInterval(() => {
+                time += 0.1;
+
+                // Generate simulated component data with realistic patterns
+                const throttlePhase = Math.sin(time * 0.5);
+                const throttleValue = Math.max(0, Math.min(100, 50 + throttlePhase * 45));
+
+                const fakeData = {
+                    throttle_percent: throttleValue,
+                    brake_engaged: Math.sin(time * 2) > 0.9,
+                    brake_percent: Math.sin(time * 2) > 0.9 ? 100 : 0,
+                    speed_kmh: Math.abs(Math.sin(time * 0.3)) * 35,
+                    voltage: 52.0 + Math.sin(time * 0.2) * 2,
+                    current: Math.abs(Math.sin(time * 0.4)) * 12,
+                    temperature: 30 + Math.abs(Math.sin(time * 0.1)) * 15,
+                    mode: Math.floor(time / 8) % 3, // Cycles through 0, 1, 2
+                    headlight: Math.floor(time / 5) % 2 === 1,
+                    cruise: false,
+                    rpm: Math.abs(Math.sin(time * 0.3)) * 400,
+                    error_code: 0,
+                    error_message: null,
+                    packets_per_sec: 10
+                };
+
+                // Update the display with simulated data
+                updateComponentDisplay(fakeData);
+                updateScooterDiagram(fakeData);
+
+            }, 100); // Update every 100ms
+        }
+
+        function stopComponentTestSimulation() {
+            if (ctSimulationInterval) {
+                clearInterval(ctSimulationInterval);
+                ctSimulationInterval = null;
+            }
+            updateCTStatus('disconnected', 'Simulation Stopped');
+            document.getElementById('btn-ct-connect').classList.remove('hidden');
+            document.getElementById('btn-ct-disconnect').classList.add('hidden');
+        }
 
         // Initialize Component Test model dropdown
         async function initComponentTestModels() {
@@ -1219,9 +1353,83 @@
                 const select = document.getElementById('ct-model-select');
                 select.innerHTML = '<option value="">-- Select model --</option>';
                 (data.models || []).forEach(m => {
-                    select.innerHTML += `<option value="${m.id}" data-protocol="${m.protocol}">${m.manufacturer} ${m.model_name}</option>`;
+                    const hasBaseline = m.has_component_baseline ? ' (has baseline)' : '';
+                    select.innerHTML += `<option value="${m.id}" data-protocol="${m.protocol}" data-has-baseline="${m.has_component_baseline || false}">${m.manufacturer} ${m.model_name}${hasBaseline}</option>`;
                 });
             } catch(e) { console.error(e); }
+        }
+
+        // Load models with baselines only for Test Mode
+        async function loadTestModeModels() {
+            try {
+                const res = await fetch(API + '/api/models/with-baselines');
+                const data = await res.json();
+
+                const select = document.getElementById('ct-model-select');
+                const emptyState = document.getElementById('ct-test-empty-state');
+
+                if (!data.models || data.models.length === 0) {
+                    // No baselines yet - show helpful message
+                    select.innerHTML = '<option value="">No baselines captured yet</option>';
+                    select.disabled = true;
+
+                    emptyState.classList.remove('hidden');
+                    emptyState.innerHTML = `
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                            <p class="font-medium text-yellow-800 mb-2">No Baselines Available</p>
+                            <p class="text-sm text-yellow-700 mb-3">
+                                You need to capture a baseline from a known-good scooter first using Learn Mode.
+                            </p>
+                            <button onclick="setComponentTestMode('learn')"
+                                    class="px-4 py-2 bg-purple-600 text-white rounded-lg font-medium">
+                                Go to Learn Mode
+                            </button>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Populate dropdown with models that have baselines
+                select.innerHTML = '<option value="">-- Select a model to test --</option>';
+                select.disabled = false;
+                emptyState.classList.add('hidden');
+
+                data.models.forEach(m => {
+                    const date = m.baseline_captured_at ? new Date(m.baseline_captured_at).toLocaleDateString() : 'Unknown';
+                    const option = document.createElement('option');
+                    option.value = m.id;
+                    option.dataset.protocol = m.protocol;
+                    option.textContent = `${m.manufacturer} ${m.model_name} (baseline: ${date})`;
+                    select.appendChild(option);
+                });
+            } catch(e) {
+                console.error('Failed to load models with baselines:', e);
+            }
+        }
+
+        // Load all models for Learn Mode (shows which have baselines)
+        async function loadLearnModeModels() {
+            try {
+                const res = await fetch(API + '/api/models');
+                const data = await res.json();
+                const select = document.getElementById('learn-model-select');
+                select.innerHTML = '<option value="">-- Select a model --</option>';
+
+                (data.models || []).forEach(m => {
+                    const hasBaseline = m.has_component_baseline ? ' (has baseline)' : '';
+                    const option = document.createElement('option');
+                    option.value = m.id;
+                    option.textContent = `${m.manufacturer} ${m.model_name}${hasBaseline}`;
+                    select.appendChild(option);
+                });
+            } catch(e) { console.error(e); }
+        }
+
+        // Update baud rate when protocol changes in Learn Mode
+        function updateLearnBaudRate() {
+            const protocol = document.getElementById('learn-new-protocol').value;
+            const baudInput = document.getElementById('learn-new-baud');
+            baudInput.value = protocol === 'jp_qs_s4' ? 1200 : 115200;
         }
 
         // Set Component Test mode
@@ -1237,14 +1445,112 @@
             // Show/hide panels
             document.getElementById('learn-mode-panel').classList.toggle('hidden', mode !== 'learn');
             document.getElementById('baseline-comparison').classList.toggle('hidden', mode !== 'test');
+            document.getElementById('ct-test-empty-state').classList.add('hidden');
+
+            // Reset Learn Mode to step 1 (model selection)
+            document.getElementById('learn-step-1-model').classList.remove('hidden');
+            document.getElementById('learn-step-sequence').classList.add('hidden');
+
+            // Show model selection for both modes
+            document.getElementById('ct-model-selection').classList.remove('hidden');
 
             if (mode === 'learn') {
+                // Learn Mode: Load all models for selection
+                loadLearnModeModels();
                 loadLearnSteps();
+            } else if (mode === 'test') {
+                // Test Mode: Only load models with baselines
+                loadTestModeModels();
             }
+        }
+
+        // Cancel Learn Mode and go back
+        function cancelLearnMode() {
+            document.getElementById('learn-mode-panel').classList.add('hidden');
+            document.getElementById('learn-step-1-model').classList.remove('hidden');
+            document.getElementById('learn-step-sequence').classList.add('hidden');
+            currentLearnModelId = null;
+
+            // Reset to Test Mode
+            setComponentTestMode('test');
+        }
+
+        // Start Learn Mode with selected/created model
+        async function startLearnWithModel() {
+            const selectedModelId = document.getElementById('learn-model-select').value;
+            const newModelName = document.getElementById('learn-new-model-name').value.trim();
+
+            let modelId = null;
+            let modelName = '';
+
+            if (selectedModelId) {
+                // Use existing model
+                modelId = parseInt(selectedModelId);
+                modelName = document.getElementById('learn-model-select').options[document.getElementById('learn-model-select').selectedIndex].textContent;
+            } else if (newModelName) {
+                // Create new model first
+                const protocol = document.getElementById('learn-new-protocol').value;
+                const baudRate = parseInt(document.getElementById('learn-new-baud').value);
+
+                try {
+                    const res = await fetch(API + '/api/models', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            model_name: newModelName,
+                            manufacturer: 'Custom',
+                            protocol: protocol,
+                            baud_rate: baudRate
+                        })
+                    });
+
+                    if (!res.ok) {
+                        showToast('Failed to create model', true);
+                        return;
+                    }
+
+                    const data = await res.json();
+                    modelId = data.id;
+                    modelName = newModelName;
+                    showToast('Model created: ' + newModelName);
+
+                    // Clear the input
+                    document.getElementById('learn-new-model-name').value = '';
+                } catch(e) {
+                    showToast('Failed to create model: ' + e.message, true);
+                    return;
+                }
+            } else {
+                showToast('Please select or create a model', true);
+                return;
+            }
+
+            // Store model ID for the learning session
+            currentLearnModelId = modelId;
+
+            // Also set the main model select
+            document.getElementById('ct-model-select').value = modelId;
+
+            // Hide step 1, show guided sequence
+            document.getElementById('learn-step-1-model').classList.add('hidden');
+            document.getElementById('learn-step-sequence').classList.remove('hidden');
+
+            showToast('Learning baseline for: ' + modelName);
+
+            // Reset learn step
+            currentLearnStep = 0;
+            displayLearnStep();
         }
 
         // Connect to Component Test WebSocket
         async function connectComponentTest() {
+            // Check for simulation mode first
+            if (ctSimulationMode) {
+                // Start simulation directly without WebSocket
+                startComponentTestSimulation();
+                return;
+            }
+
             const modelId = document.getElementById('ct-model-select').value;
             if (!modelId) {
                 showToast('Select a scooter model first', true);
@@ -1293,7 +1599,9 @@
                 if (componentTestMode === 'test') {
                     componentTestWS.send(JSON.stringify({action: 'load_baseline', model_id: parseInt(modelId)}));
                 } else if (componentTestMode === 'learn') {
-                    componentTestWS.send(JSON.stringify({action: 'start_learn', model_id: parseInt(modelId)}));
+                    // Use the stored learn model ID or fall back to selected
+                    const learnModelId = currentLearnModelId || parseInt(modelId);
+                    componentTestWS.send(JSON.stringify({action: 'start_learn', model_id: learnModelId}));
                 }
             };
 
@@ -1316,6 +1624,12 @@
 
         // Disconnect Component Test
         async function disconnectComponentTest() {
+            // Handle simulation mode
+            if (ctSimulationMode && ctSimulationInterval) {
+                stopComponentTestSimulation();
+                return;
+            }
+
             if (componentTestWS) {
                 if (componentTestMode === 'learn') {
                     componentTestWS.send(JSON.stringify({action: 'stop_learn'}));
@@ -1670,8 +1984,12 @@
         }
 
         async function finishLearnMode() {
-            const modelId = document.getElementById('ct-model-select').value;
-            if (!modelId) return;
+            // Use the stored learn model ID or fall back to dropdown
+            const modelId = currentLearnModelId || document.getElementById('ct-model-select').value;
+            if (!modelId) {
+                showToast('No model selected for baseline', true);
+                return;
+            }
 
             // Stop learn mode and get baseline data
             try {
@@ -1693,13 +2011,23 @@
 
                     if (saveRes.ok) {
                         showToast('Baseline saved successfully!');
+
+                        // Reset learn mode state
+                        currentLearnModelId = null;
+                        document.getElementById('learn-step-1-model').classList.remove('hidden');
+                        document.getElementById('learn-step-sequence').classList.add('hidden');
+
+                        // Refresh models and switch to test mode
+                        await initComponentTestModels();
                         setComponentTestMode('test');
                     } else {
                         showToast('Failed to save baseline', true);
                     }
+                } else {
+                    showToast('No baseline data collected. Try running through the guided steps first.', true);
                 }
             } catch(e) {
-                showToast('Error finishing learn mode', true);
+                showToast('Error finishing learn mode: ' + e.message, true);
             }
         }
 
