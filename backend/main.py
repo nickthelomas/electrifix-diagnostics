@@ -408,16 +408,31 @@ async def analyze_capture(
     # Combine raw data
     raw_data = b''.join(p.raw_bytes for p in session.packets)
     
-    # Analyze
+    # Analyze with baseline comparison if available
     analyzer = DiagnosticAnalyzer()
+
+    # Load baseline for comparison if it exists
+    baseline = get_baseline_for_model(model_id)
+    if baseline and baseline.get("parsed_data"):
+        try:
+            parsed_data = baseline.get("parsed_data")
+            if isinstance(parsed_data, str):
+                import json
+                parsed_data = json.loads(parsed_data)
+            analyzer.set_baseline({"stats": parsed_data})
+        except Exception as e:
+            print(f"Warning: Could not load baseline for comparison: {e}")
+
     result = analyzer.analyze_capture(raw_data, model.get("protocol", "auto"))
     
     # Get anomalies for AI
     anomaly_list = analyzer.get_anomalies_for_ai()
     
-    # Save capture file
+    # Save capture file (sanitize model name to prevent path traversal)
+    import re
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    capture_filename = f"{timestamp}_{model.get('model_name', 'unknown').replace(' ', '_')}.bin"
+    safe_model_name = re.sub(r'[^\w\-]', '_', model.get('model_name', 'unknown'))
+    capture_filename = f"{timestamp}_{safe_model_name}.bin"
     capture_path = DATA_DIR / "captures" / capture_filename
     capture_path.write_bytes(raw_data)
     
