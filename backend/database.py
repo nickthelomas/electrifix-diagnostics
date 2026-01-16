@@ -120,7 +120,34 @@ def init_database():
             FOREIGN KEY (model_id) REFERENCES scooter_models(id)
         )
     ''')
-    
+
+    # Component baselines table (for Component Test feature)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS component_baselines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_id INTEGER NOT NULL,
+            throttle_curve JSON,
+            brake_voltage_min REAL,
+            brake_voltage_max REAL,
+            idle_voltage_min REAL,
+            idle_voltage_max REAL,
+            idle_current_min REAL,
+            idle_current_max REAL,
+            operating_current_min REAL,
+            operating_current_max REAL,
+            temperature_normal_min INTEGER,
+            temperature_normal_max INTEGER,
+            temperature_warning INTEGER DEFAULT 50,
+            temperature_critical INTEGER DEFAULT 65,
+            speed_modes JSON,
+            rpm_per_kmh REAL DEFAULT 24.5,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (model_id) REFERENCES scooter_models(id) ON DELETE CASCADE
+        )
+    ''')
+
     conn.commit()
     conn.close()
     print(f"Database initialized at {DATABASE_PATH}")
@@ -634,6 +661,162 @@ def delete_model(model_id: int) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('DELETE FROM scooter_models WHERE id = ?', (model_id,))
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return success
+
+
+# Component Baseline CRUD operations
+def save_component_baseline(model_id: int, baseline_data: Dict) -> int:
+    """
+    Save learned component baseline data.
+
+    baseline_data = {
+        "throttle_curve": [0, 10, 25, 45, 70, 90, 100],  # Response at different %
+        "brake_voltage": {"min": 3.0, "max": 3.4},
+        "idle_voltage": {"min": 51.0, "max": 53.0},
+        "idle_current": {"min": 0.3, "max": 0.8},
+        "operating_current": {"min": 2.0, "max": 18.0},
+        "temperature_normal": {"min": 20, "max": 40},
+        "temperature_warning": 50,
+        "temperature_critical": 65,
+        "speed_modes": [0, 1, 2],  # Detected modes
+        "rpm_per_kmh": 24.5,  # Ratio for wheel animation
+        "notes": "Baseline captured from shop demo unit"
+    }
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Check if baseline already exists for this model
+    cursor.execute('SELECT id FROM component_baselines WHERE model_id = ?', (model_id,))
+    existing = cursor.fetchone()
+
+    brake_v = baseline_data.get("brake_voltage", {})
+    idle_v = baseline_data.get("idle_voltage", {})
+    idle_c = baseline_data.get("idle_current", {})
+    op_c = baseline_data.get("operating_current", {})
+    temp = baseline_data.get("temperature_normal", {})
+
+    if existing:
+        # Update existing baseline
+        cursor.execute('''
+            UPDATE component_baselines SET
+                throttle_curve = ?,
+                brake_voltage_min = ?, brake_voltage_max = ?,
+                idle_voltage_min = ?, idle_voltage_max = ?,
+                idle_current_min = ?, idle_current_max = ?,
+                operating_current_min = ?, operating_current_max = ?,
+                temperature_normal_min = ?, temperature_normal_max = ?,
+                temperature_warning = ?, temperature_critical = ?,
+                speed_modes = ?, rpm_per_kmh = ?, notes = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE model_id = ?
+        ''', (
+            json.dumps(baseline_data.get("throttle_curve", [])),
+            brake_v.get("min"), brake_v.get("max"),
+            idle_v.get("min"), idle_v.get("max"),
+            idle_c.get("min"), idle_c.get("max"),
+            op_c.get("min"), op_c.get("max"),
+            temp.get("min"), temp.get("max"),
+            baseline_data.get("temperature_warning", 50),
+            baseline_data.get("temperature_critical", 65),
+            json.dumps(baseline_data.get("speed_modes", [])),
+            baseline_data.get("rpm_per_kmh", 24.5),
+            baseline_data.get("notes"),
+            model_id
+        ))
+        baseline_id = existing['id']
+    else:
+        # Insert new baseline
+        cursor.execute('''
+            INSERT INTO component_baselines
+            (model_id, throttle_curve, brake_voltage_min, brake_voltage_max,
+             idle_voltage_min, idle_voltage_max, idle_current_min, idle_current_max,
+             operating_current_min, operating_current_max, temperature_normal_min,
+             temperature_normal_max, temperature_warning, temperature_critical,
+             speed_modes, rpm_per_kmh, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            model_id,
+            json.dumps(baseline_data.get("throttle_curve", [])),
+            brake_v.get("min"), brake_v.get("max"),
+            idle_v.get("min"), idle_v.get("max"),
+            idle_c.get("min"), idle_c.get("max"),
+            op_c.get("min"), op_c.get("max"),
+            temp.get("min"), temp.get("max"),
+            baseline_data.get("temperature_warning", 50),
+            baseline_data.get("temperature_critical", 65),
+            json.dumps(baseline_data.get("speed_modes", [])),
+            baseline_data.get("rpm_per_kmh", 24.5),
+            baseline_data.get("notes")
+        ))
+        baseline_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+    return baseline_id
+
+
+def get_component_baseline(model_id: int) -> Optional[Dict]:
+    """Get component baseline data for a model."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM component_baselines WHERE model_id = ?', (model_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    baseline = dict(row)
+    # Parse JSON fields
+    if baseline.get('throttle_curve'):
+        baseline['throttle_curve'] = json.loads(baseline['throttle_curve'])
+    if baseline.get('speed_modes'):
+        baseline['speed_modes'] = json.loads(baseline['speed_modes'])
+
+    # Structure the data for easier consumption
+    return {
+        "id": baseline.get("id"),
+        "model_id": baseline.get("model_id"),
+        "throttle_curve": baseline.get("throttle_curve", []),
+        "brake_voltage": {
+            "min": baseline.get("brake_voltage_min"),
+            "max": baseline.get("brake_voltage_max")
+        },
+        "idle_voltage": {
+            "min": baseline.get("idle_voltage_min"),
+            "max": baseline.get("idle_voltage_max")
+        },
+        "idle_current": {
+            "min": baseline.get("idle_current_min"),
+            "max": baseline.get("idle_current_max")
+        },
+        "operating_current": {
+            "min": baseline.get("operating_current_min"),
+            "max": baseline.get("operating_current_max")
+        },
+        "temperature_normal": {
+            "min": baseline.get("temperature_normal_min"),
+            "max": baseline.get("temperature_normal_max")
+        },
+        "temperature_warning": baseline.get("temperature_warning", 50),
+        "temperature_critical": baseline.get("temperature_critical", 65),
+        "speed_modes": baseline.get("speed_modes", []),
+        "rpm_per_kmh": baseline.get("rpm_per_kmh", 24.5),
+        "notes": baseline.get("notes"),
+        "created_at": baseline.get("created_at"),
+        "updated_at": baseline.get("updated_at")
+    }
+
+
+def delete_component_baseline(model_id: int) -> bool:
+    """Delete component baseline for a model."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM component_baselines WHERE model_id = ?', (model_id,))
     success = cursor.rowcount > 0
     conn.commit()
     conn.close()

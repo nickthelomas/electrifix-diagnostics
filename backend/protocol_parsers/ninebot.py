@@ -244,7 +244,7 @@ class NinebotParser:
         checksum_error_rate = 0
         if self.stats["total_packets"] > 0:
             checksum_error_rate = (self.stats["invalid_checksums"] / self.stats["total_packets"]) * 100
-        
+
         return {
             "protocol": "ninebot",
             "total_packets": self.stats["total_packets"],
@@ -254,3 +254,144 @@ class NinebotParser:
             "command_distribution": self.stats["commands"],
             "parse_errors": len(self.errors)
         }
+
+    def parse_to_components(self, data: bytes) -> Optional[Dict]:
+        """
+        Parse raw packet into component-friendly format for real-time display.
+
+        Returns a dictionary with all component states, or None if packet is invalid.
+        """
+        # Parse the data
+        packets = self.parse(data)
+        if not packets:
+            return None
+
+        # Initialize component data with defaults
+        component_data = {
+            "timestamp": None,
+            "throttle_percent": 0,
+            "throttle_raw": 0,
+            "brake_engaged": False,
+            "brake_percent": 0,
+            "brake_raw": 0,
+            "speed_kmh": 0,
+            "voltage": 0,
+            "current": 0,
+            "temperature": 0,
+            "mode": 0,
+            "mode_name": "eco",
+            "headlight": False,
+            "cruise": False,
+            "rpm": 0,
+            "error_code": 0,
+            "error_message": "No error",
+            "battery_percent": 0,
+            "protocol": "ninebot",
+            "packet_valid": True
+        }
+
+        # Extract values from recent packets
+        for packet in packets[-30:]:  # Look at last 30 packets
+            if not packet.checksum_valid:
+                continue
+
+            # Check if this is a read response with data
+            if packet.command == 0x03:  # READ_RESPONSE
+                self._extract_register_value(packet, component_data)
+
+        return component_data
+
+    def _extract_register_value(self, packet: 'NinebotPacket', component_data: Dict):
+        """Extract register value from a read response packet."""
+        register = packet.argument
+        payload = packet.payload
+
+        if len(payload) < 2:
+            return
+
+        # Convert payload to integer value (little-endian)
+        value = struct.unpack('<H', payload[:2])[0] if len(payload) >= 2 else 0
+
+        # Map register to component field
+        if register == 0x25:  # Current speed
+            component_data["speed_kmh"] = value / 1000.0
+            component_data["rpm"] = int(component_data["speed_kmh"] * 24.5)
+        elif register == 0x31:  # BMS voltage
+            component_data["voltage"] = value / 100.0
+        elif register == 0x32:  # BMS current
+            component_data["current"] = value / 100.0
+        elif register == 0x34:  # Battery percent
+            component_data["battery_percent"] = min(value, 100)
+        elif register == 0x35:  # Temperature 1
+            component_data["temperature"] = value / 10.0
+        elif register == 0x3A:  # Error code
+            component_data["error_code"] = value
+            component_data["error_message"] = self._get_error_message(value)
+        elif register == 0x50:  # Throttle
+            component_data["throttle_raw"] = value
+            component_data["throttle_percent"] = min(100, value / 2.55)  # Assuming 0-255 range
+        elif register == 0x51:  # Brake
+            component_data["brake_raw"] = value
+            component_data["brake_percent"] = min(100, value / 2.55)
+            component_data["brake_engaged"] = value > 25
+        elif register == 0xB0:  # Tail light / headlight
+            component_data["headlight"] = value > 0
+
+    def _get_error_message(self, error_code: int) -> str:
+        """Convert Ninebot error code to message."""
+        error_messages = {
+            0: "No error",
+            10: "Undervoltage",
+            11: "Overvoltage",
+            12: "Motor hall sensor error",
+            13: "Motor phase error",
+            14: "BMS communication error",
+            15: "Controller overheat",
+            16: "Motor overheat",
+            17: "Overcurrent",
+            18: "Short circuit",
+            19: "Motor stalled",
+            21: "Throttle error",
+            22: "Brake error",
+            23: "Serial communication error",
+            24: "Battery cell imbalance",
+        }
+        return error_messages.get(error_code, f"Unknown error ({error_code})")
+
+    def get_latest_components(self) -> Dict:
+        """Get component data from already-parsed packets (for use with existing session)."""
+        if not self.packets:
+            return None
+
+        component_data = {
+            "timestamp": None,
+            "throttle_percent": 0,
+            "throttle_raw": 0,
+            "brake_engaged": False,
+            "brake_percent": 0,
+            "brake_raw": 0,
+            "speed_kmh": 0,
+            "voltage": 0,
+            "current": 0,
+            "temperature": 0,
+            "mode": 0,
+            "mode_name": "eco",
+            "headlight": False,
+            "cruise": False,
+            "rpm": 0,
+            "error_code": 0,
+            "error_message": "No error",
+            "battery_percent": 0,
+            "protocol": "ninebot",
+            "packet_valid": True
+        }
+
+        # Process last 30 packets
+        for packet in self.packets[-30:]:
+            if not packet.checksum_valid:
+                continue
+
+            if packet.command == 0x03:  # READ_RESPONSE
+                self._extract_register_value(packet, component_data)
+
+        return component_data

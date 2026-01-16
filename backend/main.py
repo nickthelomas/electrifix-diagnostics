@@ -29,7 +29,8 @@ from database import (
     init_database, seed_default_models, get_all_models, get_model_by_id,
     create_model, update_model, delete_model, create_diagnosis,
     update_diagnosis_with_ai, complete_diagnosis, get_diagnosis_history,
-    get_similar_faults, get_diagnosis_stats, create_baseline, get_baseline_for_model
+    get_similar_faults, get_diagnosis_stats, create_baseline, get_baseline_for_model,
+    save_component_baseline, get_component_baseline, delete_component_baseline
 )
 from serial_capture import SerialCapture, get_capture_instance
 from analysis import DiagnosticAnalyzer
@@ -264,6 +265,118 @@ class GuidedTestStep(BaseModel):
     expected_result: str
     action: Optional[str] = None  # 'capture', 'analyze', 'check'
 
+
+class ComponentBaselineData(BaseModel):
+    """Component baseline data for Learn Mode."""
+    throttle_curve: Optional[List[float]] = None
+    brake_voltage: Optional[dict] = None
+    idle_voltage: Optional[dict] = None
+    idle_current: Optional[dict] = None
+    operating_current: Optional[dict] = None
+    temperature_normal: Optional[dict] = None
+    temperature_warning: int = 50
+    temperature_critical: int = 65
+    speed_modes: Optional[List[int]] = None
+    rpm_per_kmh: float = 24.5
+    notes: Optional[str] = None
+
+
+# Component Test WebSocket connection manager
+class ComponentTestManager:
+    """Manager for component test WebSocket connections."""
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+        self.learn_mode_active: bool = False
+        self.learn_model_id: Optional[int] = None
+        self.learn_step: int = 0
+        self.learn_data: Dict = {}
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except:
+                pass
+
+    def start_learn_mode(self, model_id: int):
+        self.learn_mode_active = True
+        self.learn_model_id = model_id
+        self.learn_step = 0
+        self.learn_data = {
+            "throttle_values": [],
+            "voltage_values": [],
+            "current_values": [],
+            "temperature_values": [],
+            "modes_seen": set(),
+            "brake_voltages": []
+        }
+
+    def stop_learn_mode(self):
+        self.learn_mode_active = False
+        self.learn_model_id = None
+        self.learn_step = 0
+
+    def record_learn_data(self, component_data: Dict):
+        """Record data during learn mode."""
+        if not self.learn_mode_active:
+            return
+
+        if component_data.get("throttle_percent", 0) > 0:
+            self.learn_data["throttle_values"].append(component_data["throttle_percent"])
+        if component_data.get("voltage", 0) > 0:
+            self.learn_data["voltage_values"].append(component_data["voltage"])
+        if component_data.get("current", 0) >= 0:
+            self.learn_data["current_values"].append(component_data["current"])
+        if component_data.get("temperature", 0) > 0:
+            self.learn_data["temperature_values"].append(component_data["temperature"])
+        if component_data.get("mode") is not None:
+            self.learn_data["modes_seen"].add(component_data["mode"])
+        if component_data.get("brake_engaged"):
+            self.learn_data["brake_voltages"].append(component_data.get("voltage", 0))
+
+    def get_baseline_from_learn_data(self) -> Dict:
+        """Generate baseline data from recorded learn data."""
+        throttle = self.learn_data.get("throttle_values", [])
+        voltage = self.learn_data.get("voltage_values", [])
+        current = self.learn_data.get("current_values", [])
+        temp = self.learn_data.get("temperature_values", [])
+        modes = list(self.learn_data.get("modes_seen", set()))
+
+        # Calculate ranges with some tolerance
+        def get_range(values, tolerance=0.1):
+            if not values:
+                return {"min": None, "max": None}
+            min_val = min(values)
+            max_val = max(values)
+            range_size = max_val - min_val
+            return {
+                "min": round(min_val - range_size * tolerance, 2),
+                "max": round(max_val + range_size * tolerance, 2)
+            }
+
+        return {
+            "throttle_curve": sorted(set(int(t) for t in throttle)) if throttle else [],
+            "brake_voltage": get_range(self.learn_data.get("brake_voltages", [])),
+            "idle_voltage": get_range(voltage),
+            "idle_current": get_range([c for c in current if c < 2]),  # Idle = low current
+            "operating_current": get_range([c for c in current if c >= 2]),
+            "temperature_normal": {
+                "min": int(min(temp)) - 5 if temp else 20,
+                "max": int(max(temp)) + 5 if temp else 40
+            },
+            "speed_modes": sorted(modes)
+        }
+
+
+component_test_manager = ComponentTestManager()
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -1158,16 +1271,16 @@ async def websocket_capture(websocket: WebSocket):
     """WebSocket endpoint for real-time capture data."""
     await manager.connect(websocket)
     capture = get_capture_instance()
-    
+
     try:
         while True:
             # Send current capture status
             if capture.is_capturing and capture.current_session:
                 session = capture.current_session
-                
+
                 # Get recent packets
                 recent_packets = session.packets[-10:] if session.packets else []
-                
+
                 await websocket.send_json({
                     "type": "capture_update",
                     "capturing": True,
@@ -1180,11 +1293,400 @@ async def websocket_capture(websocket: WebSocket):
                     "type": "capture_update",
                     "capturing": False
                 })
-            
+
             await asyncio.sleep(0.5)  # Update every 500ms
-            
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+# ----- Component Test WebSocket -----
+
+@app.websocket("/ws/component-test")
+async def websocket_component_test(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time component state updates.
+
+    Sends parsed component data every 100ms:
+    - Throttle %
+    - Brake status
+    - Speed, voltage, current
+    - Mode, lights, error codes
+    - Comparison to baseline (if loaded)
+    """
+    await component_test_manager.connect(websocket)
+    capture = get_capture_instance()
+
+    # Track last model ID for baseline loading
+    current_baseline = None
+    last_model_id = None
+
+    try:
+        while True:
+            if capture.is_capturing and capture.current_session:
+                session = capture.current_session
+
+                # Combine recent raw data
+                if session.packets:
+                    raw_data = b''.join(p.raw_bytes for p in session.packets[-50:])
+
+                    # Detect protocol and parse
+                    component_data = None
+                    protocol = session.protocol_detected or "auto"
+
+                    if protocol == "jp_qs_s4" or raw_data[:2] == b'\x01\x03' or raw_data[:2] == b'\x01\x04':
+                        parser = JPParser()
+                        component_data = parser.parse_to_components(raw_data)
+                    elif protocol == "ninebot" or raw_data[:2] == b'\x5a\xa5':
+                        parser = NinebotParser()
+                        component_data = parser.parse_to_components(raw_data)
+                    else:
+                        # Try JP first, then Ninebot
+                        parser = JPParser()
+                        component_data = parser.parse_to_components(raw_data)
+                        if not component_data or component_data.get("speed_kmh", 0) == 0:
+                            parser = NinebotParser()
+                            component_data = parser.parse_to_components(raw_data)
+
+                    if component_data:
+                        # Add metadata
+                        component_data["timestamp"] = datetime.now().isoformat()
+                        component_data["packets_per_sec"] = len(session.packets) / max(1, (datetime.now() - session.start_time).total_seconds())
+
+                        # Record data if in learn mode
+                        if component_test_manager.learn_mode_active:
+                            component_test_manager.record_learn_data(component_data)
+                            component_data["learn_mode"] = True
+                            component_data["learn_step"] = component_test_manager.learn_step
+
+                        # Compare to baseline if available
+                        if current_baseline:
+                            component_data["baseline_comparison"] = _compare_to_baseline(
+                                component_data, current_baseline
+                            )
+
+                        await websocket.send_json({
+                            "type": "component_data",
+                            "data": component_data
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "component_data",
+                            "data": None,
+                            "error": "Could not parse component data"
+                        })
+                else:
+                    await websocket.send_json({
+                        "type": "component_data",
+                        "data": None,
+                        "waiting": True
+                    })
+            else:
+                await websocket.send_json({
+                    "type": "component_data",
+                    "capturing": False,
+                    "learn_mode": component_test_manager.learn_mode_active
+                })
+
+            # Check for incoming messages (baseline load request, etc.)
+            try:
+                msg = await asyncio.wait_for(websocket.receive_json(), timeout=0.1)
+                if msg.get("action") == "load_baseline":
+                    model_id = msg.get("model_id")
+                    if model_id:
+                        current_baseline = get_component_baseline(model_id)
+                        last_model_id = model_id
+                        await websocket.send_json({
+                            "type": "baseline_loaded",
+                            "model_id": model_id,
+                            "has_baseline": current_baseline is not None
+                        })
+                elif msg.get("action") == "start_learn":
+                    model_id = msg.get("model_id")
+                    if model_id:
+                        component_test_manager.start_learn_mode(model_id)
+                        await websocket.send_json({
+                            "type": "learn_started",
+                            "model_id": model_id
+                        })
+                elif msg.get("action") == "stop_learn":
+                    component_test_manager.stop_learn_mode()
+                    await websocket.send_json({
+                        "type": "learn_stopped"
+                    })
+                elif msg.get("action") == "next_learn_step":
+                    component_test_manager.learn_step += 1
+                    await websocket.send_json({
+                        "type": "learn_step_changed",
+                        "step": component_test_manager.learn_step
+                    })
+            except asyncio.TimeoutError:
+                pass
+
+            await asyncio.sleep(0.1)  # Update every 100ms for smooth animations
+
+    except WebSocketDisconnect:
+        component_test_manager.disconnect(websocket)
+
+
+def _compare_to_baseline(component_data: Dict, baseline: Dict) -> Dict:
+    """Compare current component data to baseline and return comparison results."""
+    comparison = {
+        "anomalies": [],
+        "status": {}  # 'ok', 'warning', 'error' for each field
+    }
+
+    # Compare voltage
+    idle_v = baseline.get("idle_voltage", {})
+    if idle_v.get("min") is not None and idle_v.get("max") is not None:
+        voltage = component_data.get("voltage", 0)
+        if voltage > 0:
+            if idle_v["min"] <= voltage <= idle_v["max"]:
+                comparison["status"]["voltage"] = "ok"
+            elif voltage < idle_v["min"] * 0.9 or voltage > idle_v["max"] * 1.1:
+                comparison["status"]["voltage"] = "error"
+                comparison["anomalies"].append({
+                    "field": "voltage",
+                    "message": f"Voltage {voltage}V outside expected range ({idle_v['min']}-{idle_v['max']}V)",
+                    "severity": "high" if voltage < idle_v["min"] * 0.8 else "medium"
+                })
+            else:
+                comparison["status"]["voltage"] = "warning"
+
+    # Compare temperature
+    temp_range = baseline.get("temperature_normal", {})
+    if temp_range.get("min") is not None and temp_range.get("max") is not None:
+        temp = component_data.get("temperature", 0)
+        if temp > 0:
+            if temp_range["min"] <= temp <= temp_range["max"]:
+                comparison["status"]["temperature"] = "ok"
+            elif temp >= baseline.get("temperature_critical", 65):
+                comparison["status"]["temperature"] = "error"
+                comparison["anomalies"].append({
+                    "field": "temperature",
+                    "message": f"Temperature {temp}C is CRITICAL (>={baseline.get('temperature_critical', 65)}C)",
+                    "severity": "critical"
+                })
+            elif temp >= baseline.get("temperature_warning", 50):
+                comparison["status"]["temperature"] = "warning"
+                comparison["anomalies"].append({
+                    "field": "temperature",
+                    "message": f"Temperature {temp}C is elevated (warning threshold: {baseline.get('temperature_warning', 50)}C)",
+                    "severity": "medium"
+                })
+            else:
+                comparison["status"]["temperature"] = "ok"
+
+    # Compare current
+    op_current = baseline.get("operating_current", {})
+    if op_current.get("max") is not None:
+        current = component_data.get("current", 0)
+        if current > op_current["max"] * 1.2:
+            comparison["status"]["current"] = "error"
+            comparison["anomalies"].append({
+                "field": "current",
+                "message": f"Current draw {current}A exceeds expected maximum ({op_current['max']}A)",
+                "severity": "high"
+            })
+        elif current > op_current["max"]:
+            comparison["status"]["current"] = "warning"
+        else:
+            comparison["status"]["current"] = "ok"
+
+    # Check error code
+    if component_data.get("error_code", 0) != 0:
+        comparison["status"]["error_code"] = "error"
+        comparison["anomalies"].append({
+            "field": "error_code",
+            "message": f"Error code detected: {component_data.get('error_message', 'Unknown')}",
+            "severity": "critical"
+        })
+    else:
+        comparison["status"]["error_code"] = "ok"
+
+    return comparison
+
+
+# ----- Component Test API Routes -----
+
+@app.get("/api/component-test/status")
+async def get_component_test_status():
+    """Get current component states from live capture."""
+    capture = get_capture_instance()
+
+    if not capture.is_capturing or not capture.current_session:
+        return {
+            "capturing": False,
+            "component_data": None
+        }
+
+    session = capture.current_session
+    if not session.packets:
+        return {
+            "capturing": True,
+            "component_data": None,
+            "waiting_for_data": True
+        }
+
+    # Parse recent data
+    raw_data = b''.join(p.raw_bytes for p in session.packets[-50:])
+    protocol = session.protocol_detected or "auto"
+
+    component_data = None
+    if protocol == "jp_qs_s4":
+        parser = JPParser()
+        component_data = parser.parse_to_components(raw_data)
+    elif protocol == "ninebot":
+        parser = NinebotParser()
+        component_data = parser.parse_to_components(raw_data)
+    else:
+        # Auto-detect
+        parser = JPParser()
+        component_data = parser.parse_to_components(raw_data)
+        if not component_data:
+            parser = NinebotParser()
+            component_data = parser.parse_to_components(raw_data)
+
+    return {
+        "capturing": True,
+        "component_data": component_data,
+        "packet_count": len(session.packets),
+        "learn_mode": component_test_manager.learn_mode_active
+    }
+
+
+@app.post("/api/component-test/start-learn")
+async def start_learn_mode(model_id: int):
+    """Start learning mode for a scooter model."""
+    model = get_model_by_id(model_id)
+    if not model:
+        raise HTTPException(404, "Model not found")
+
+    component_test_manager.start_learn_mode(model_id)
+
+    return {
+        "message": "Learn mode started",
+        "model_id": model_id,
+        "model_name": model.get("model_name")
+    }
+
+
+@app.post("/api/component-test/stop-learn")
+async def stop_learn_mode():
+    """Stop learning mode and return collected data."""
+    if not component_test_manager.learn_mode_active:
+        return {"message": "Learn mode not active"}
+
+    baseline_data = component_test_manager.get_baseline_from_learn_data()
+    model_id = component_test_manager.learn_model_id
+    component_test_manager.stop_learn_mode()
+
+    return {
+        "message": "Learn mode stopped",
+        "model_id": model_id,
+        "baseline_data": baseline_data
+    }
+
+
+@app.post("/api/component-test/save-baseline")
+async def save_component_baseline_endpoint(model_id: int, baseline: ComponentBaselineData):
+    """Save learned baseline data."""
+    model = get_model_by_id(model_id)
+    if not model:
+        raise HTTPException(404, "Model not found")
+
+    baseline_data = baseline.dict()
+    baseline_id = save_component_baseline(model_id, baseline_data)
+
+    return {
+        "message": "Baseline saved",
+        "baseline_id": baseline_id,
+        "model_id": model_id
+    }
+
+
+@app.get("/api/component-test/baseline/{model_id}")
+async def get_component_baseline_endpoint(model_id: int):
+    """Get baseline data for comparison."""
+    baseline = get_component_baseline(model_id)
+    if not baseline:
+        raise HTTPException(404, "No baseline found for this model")
+
+    return baseline
+
+
+@app.delete("/api/component-test/baseline/{model_id}")
+async def delete_component_baseline_endpoint(model_id: int):
+    """Delete baseline for a model."""
+    success = delete_component_baseline(model_id)
+    if not success:
+        raise HTTPException(404, "No baseline found for this model")
+
+    return {"message": "Baseline deleted"}
+
+
+@app.get("/api/component-test/learn-steps")
+async def get_learn_steps():
+    """Get the guided learn sequence steps."""
+    steps = [
+        {
+            "step_number": 1,
+            "title": "Power ON",
+            "instruction": "Power on the scooter and wait for it to initialize. Keep it stationary with wheels off the ground.",
+            "expected_result": "Display shows normal startup, no error codes",
+            "duration_seconds": 5
+        },
+        {
+            "step_number": 2,
+            "title": "Idle State",
+            "instruction": "Let the scooter sit idle. Do not touch throttle or brake.",
+            "expected_result": "Capturing idle voltage, current, and temperature baseline",
+            "duration_seconds": 10
+        },
+        {
+            "step_number": 3,
+            "title": "Throttle Test",
+            "instruction": "Slowly apply throttle from 0% to 100%, then release. Repeat twice.",
+            "expected_result": "Capturing throttle response curve",
+            "duration_seconds": 15
+        },
+        {
+            "step_number": 4,
+            "title": "Release Throttle",
+            "instruction": "Fully release throttle and let speed return to zero.",
+            "expected_result": "Motor braking response captured",
+            "duration_seconds": 5
+        },
+        {
+            "step_number": 5,
+            "title": "Brake Test",
+            "instruction": "Apply the brake lever firmly.",
+            "expected_result": "Brake activation voltage captured",
+            "duration_seconds": 5
+        },
+        {
+            "step_number": 6,
+            "title": "Mode Cycling",
+            "instruction": "Cycle through all speed modes (Eco, Sport, Turbo).",
+            "expected_result": "All available speed modes detected",
+            "duration_seconds": 10
+        },
+        {
+            "step_number": 7,
+            "title": "Headlight Test",
+            "instruction": "Toggle the headlight on and off.",
+            "expected_result": "Headlight status change detected",
+            "duration_seconds": 5
+        },
+        {
+            "step_number": 8,
+            "title": "Complete",
+            "instruction": "Learning complete! Review the captured baseline data.",
+            "expected_result": "Baseline ready to save",
+            "duration_seconds": 0
+        }
+    ]
+    return {"steps": steps, "total_steps": len(steps)}
 
 
 # ----- Database Health Routes -----
