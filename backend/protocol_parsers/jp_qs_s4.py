@@ -3,7 +3,7 @@ ElectriFix Diagnostics - JP/QS-S4 Protocol Parser
 Reference: https://github.com/teixeluis/escooter-lcd-esc-decode
 
 This protocol is used by many Chinese e-scooters with QS-S4 displays.
-Packet format: 15 bytes, last byte is XOR checksum of bytes 1-14
+Packet format: 15 bytes, last byte is XOR checksum of bytes 0-13
 Baud rate: 1200
 """
 
@@ -142,9 +142,9 @@ class JPParser:
             if len(data) != self.PACKET_LENGTH:
                 return None
             
-            # Calculate checksum (XOR of bytes 1-14)
+            # Calculate checksum (XOR of bytes 0-13)
             calculated_checksum = 0
-            for i in range(1, 14):
+            for i in range(0, 14):
                 calculated_checksum ^= data[i]
             
             checksum = data[14]
